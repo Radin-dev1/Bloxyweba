@@ -92,5 +92,27 @@ export function useScene(sessionId: string | null, connected: boolean) {
     [sessionId],
   );
 
-  return { scene, loading, error, refresh, select };
+  /** Optimistically replace one part (after a local edit), before Studio confirms it. */
+  const patchPart = useCallback((index: number, part: ScenePart) => {
+    setScene((s) => (s ? { ...s, parts: s.parts.map((p, i) => (i === index ? part : p)) } : s));
+  }, []);
+
+  const setProperties = useCallback(
+    async (path: string, properties: Record<string, unknown>) => {
+      if (!sessionId) return "No session";
+      const res = await fetch("/api/studio", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sessionId, tool: "set_properties", args: { path, properties } }),
+      }).catch(() => null);
+      if (!res) return "Network error";
+      const data = (await res.json().catch(() => ({}))) as { result?: { errors?: Record<string, string> }; error?: string };
+      if (!res.ok) return data.error ?? `Edit failed (${res.status})`;
+      const errs = Object.entries(data.result?.errors ?? {});
+      return errs.length ? errs.map(([k, v]) => `${k}: ${v}`).join("; ") : null;
+    },
+    [sessionId],
+  );
+
+  return { scene, loading, error, refresh, select, patchPart, setProperties };
 }

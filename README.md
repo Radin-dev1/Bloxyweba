@@ -73,7 +73,7 @@ The plugin's website URL must use HTTPS in production. Studio asks the user once
 
 ## The Studio app
 
-- **3D Workspace**: a live, orbitable view of your place's parts (shapes, colors, transparency, neon), streamed from the plugin with `get_scene`. Click a part to select it in Studio and inspect it. The view refreshes after Bloxy edits the place.
+- **3D Workspace**: a Roblox Studio–style view of your place: sky, a 4-stud grid on every surface, Explorer tree with search, Properties panel, Select/Move/Scale/Rotate tools (Ctrl+1–4, 1-stud / 15° snapping) and a view cube. Parts stream from the plugin with `get_scene`. Selection syncs to Studio, and edits from the gizmo or Properties go to Studio as undoable `set_properties` calls. Before you connect, a demo place lets you try everything locally.
 - **Nodes**: chain build steps (Step and Check nodes) into a workflow and run it. Each node is sent to the agent in order through the same conversation, with live status on every node. Templates: lava obby, coin collector, tycoon starter.
 - **Chat dock**: the prompt bar floats over the workspace, and the conversation shows live tool calls.
 

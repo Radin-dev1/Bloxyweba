@@ -3,8 +3,8 @@ import { bridge } from "@/lib/bridge";
 
 export const maxDuration = 60;
 
-// Tools the website itself may call without going through the AI.
-// Kept to reads plus selection so the browser can't make silent edits.
+// Tools the website itself may call without going through the AI: reads, selection, and
+// the Properties panel / transform gizmo edits the user makes by hand (undoable in Studio).
 const Body = z.discriminatedUnion("tool", [
   z.object({
     sessionId: z.string().min(1),
@@ -15,6 +15,11 @@ const Body = z.discriminatedUnion("tool", [
     sessionId: z.string().min(1),
     tool: z.literal("set_selection"),
     args: z.object({ paths: z.array(z.string()).max(200) }),
+  }),
+  z.object({
+    sessionId: z.string().min(1),
+    tool: z.literal("set_properties"),
+    args: z.object({ path: z.string().min(1), properties: z.record(z.string(), z.unknown()) }),
   }),
   z.object({
     sessionId: z.string().min(1),
