@@ -11,6 +11,8 @@ import { demoScene } from "./demoScene";
 import Explorer from "./Explorer";
 import { ConnectionPill, MessageView, PairPanel, SettingsDialog } from "./parts";
 import Properties from "./Properties";
+import type { BuildT } from "@/lib/openrouter";
+import { buildToParts } from "./nodes/ModelPreview";
 import { applyEdit, toStudioProperties, type PartEdit } from "./sceneMath";
 import { useChat } from "./useChat";
 import { useScene, type Scene } from "./useScene";
@@ -20,7 +22,7 @@ const Viewport3D = dynamic(() => import("./Viewport3D"), { ssr: false });
 const NodeEditor = dynamic(() => import("./NodeEditor"), { ssr: false });
 
 const EASE = "ease-[var(--ease-spring)]";
-const PLUGIN_VERSION = "0.2.0";
+const PLUGIN_VERSION = "0.3.0";
 
 type Tab = "workspace" | "nodes";
 
@@ -120,6 +122,27 @@ export default function StudioApp() {
     if (window.location.search) window.history.replaceState(null, "", "/studio");
   }, []);
 
+  /** Puts a generated build into Studio (as a Model) or, offline, into the local place. */
+  const insertBuild = async (build: BuildT): Promise<string> => {
+    if (!connected) {
+      const added = buildToParts(build);
+      setDemo((d) => ({
+        ...d,
+        parts: [...d.parts.filter((p) => !p.path.startsWith(`Workspace.${build.name}.`)), ...added],
+      }));
+      return `Workspace.${build.name}`;
+    }
+    const res = await fetch("/api/studio", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ sessionId, tool: "insert_parts", args: build }),
+    });
+    const data = (await res.json().catch(() => ({}))) as { result?: { path?: string }; error?: string };
+    if (!res.ok || !data.result?.path) throw new Error(data.error ?? `Insert failed (${res.status})`);
+    void sceneApi.refresh();
+    return data.result.path;
+  };
+
   const outdated = connected && status?.studioInfo?.pluginVersion !== PLUGIN_VERSION;
   const editable = !connected || !outdated;
 
@@ -139,7 +162,15 @@ export default function StudioApp() {
           />
         ) : (
           <div className="h-full bg-ink">
-            <NodeEditor send={chat.send} stop={chat.stop} busy={chat.busy} connected={connected} />
+            <NodeEditor
+              send={chat.send}
+              stop={chat.stop}
+              busy={chat.busy}
+              connected={connected}
+              openrouterKey={settings.openrouterKey}
+              onInsertBuild={insertBuild}
+              onNeedsKey={() => setShowSettings(true)}
+            />
           </div>
         )}
       </div>
@@ -218,7 +249,7 @@ export default function StudioApp() {
             <div className={`${PANEL} flex min-h-[180px] flex-1 flex-col overflow-hidden`}>
               {!connected && (
                 <p className="mx-3 mt-3 -mb-1 w-max rounded-full bg-amber-300/15 px-2 py-0.5 text-[10px] font-medium tracking-[0.15em] text-amber-200 uppercase">
-                  Demo scene
+                  Local place · not connected
                 </p>
               )}
               <Explorer parts={parts} selected={selected} onSelect={onSelect} />
@@ -274,13 +305,15 @@ export default function StudioApp() {
       )}
 
       {/* ── ForgeGUI-style chat dock ── */}
-      <ChatDock
-        chat={chat}
-        input={input}
-        setInput={setInput}
-        connected={connected}
-        modelLabel={settings.models[settings.provider]}
-      />
+      {tab === "workspace" && (
+        <ChatDock
+          chat={chat}
+          input={input}
+          setInput={setInput}
+          connected={connected}
+          modelLabel={settings.models[settings.provider]}
+        />
+      )}
 
       {showSettings && (
         <SettingsDialog settings={settings} onSave={setSettings} onClose={() => setShowSettings(false)} />

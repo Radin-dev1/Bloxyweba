@@ -1,10 +1,12 @@
 import { z } from "zod";
 import { bridge } from "@/lib/bridge";
+import { Build } from "@/lib/openrouter";
 
 export const maxDuration = 60;
 
-// Tools the website itself may call without going through the AI: reads, selection, and
-// the Properties panel / transform gizmo edits the user makes by hand (undoable in Studio).
+// Tools the website itself may call without going through the AI: reads, selection,
+// the Properties panel / transform gizmo edits the user makes by hand, and inserting a
+// generated model from the node editor. All edits are undoable in Studio.
 const Body = z.discriminatedUnion("tool", [
   z.object({
     sessionId: z.string().min(1),
@@ -20,6 +22,11 @@ const Body = z.discriminatedUnion("tool", [
     sessionId: z.string().min(1),
     tool: z.literal("set_properties"),
     args: z.object({ path: z.string().min(1), properties: z.record(z.string(), z.unknown()) }),
+  }),
+  z.object({
+    sessionId: z.string().min(1),
+    tool: z.literal("insert_parts"),
+    args: Build.extend({ at: z.tuple([z.number(), z.number(), z.number()]).optional() }),
   }),
   z.object({
     sessionId: z.string().min(1),

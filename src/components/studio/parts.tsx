@@ -59,7 +59,10 @@ export function PairPanel({
           {status.studioInfo?.placeName ?? "Your place"}
         </p>
         <p className="mt-1 text-sm text-white/45">is linked to this tab. Bloxy can read and edit it.</p>
-        <button onClick={onNewCode} className="mt-4 text-xs text-white/40 underline-offset-4 hover:text-white/80 hover:underline">
+        <button
+          onClick={onNewCode}
+          className="mt-4 text-xs text-white/40 underline-offset-4 hover:text-white/80 hover:underline"
+        >
           Pair a different Studio
         </button>
         {status.pairCode && <PairCode code={status.pairCode} />}
@@ -73,8 +76,8 @@ export function PairPanel({
       <ol className="mt-5 space-y-4 text-sm text-white/55">
         {[
           <>
-            Put the plugin in Studio&apos;s Plugins folder (<span className="text-white/75">Plugins → Plugins Folder</span>
-            ) and restart Studio.
+            Put the plugin in Studio&apos;s Plugins folder (
+            <span className="text-white/75">Plugins → Plugins Folder</span>) and restart Studio.
           </>,
           <>Open the Bloxy button in the Plugins tab. Allow HTTP when Studio asks.</>,
           <>Enter this site&apos;s URL and the code below, then press Connect.</>,
@@ -92,7 +95,9 @@ export function PairPanel({
         className={`group mt-5 flex items-center justify-between rounded-full border border-white/10 py-1.5 pr-1.5 pl-4 text-sm transition-colors duration-500 ${EASE} hover:bg-white/[0.05]`}
       >
         Download plugin
-        <span className={`grid size-7 place-items-center rounded-full bg-white/[0.08] transition-transform duration-500 ${EASE} group-hover:translate-y-0.5`}>
+        <span
+          className={`grid size-7 place-items-center rounded-full bg-white/[0.08] transition-transform duration-500 ${EASE} group-hover:translate-y-0.5`}
+        >
           <Download className="size-3.5" />
         </span>
       </a>
@@ -230,7 +235,9 @@ export function ToolChip({ tool }: { tool: ToolCall }) {
         )}
         <span className="font-medium">{TOOL_LABELS[tool.name] ?? tool.name}</span>
         {target && <span className="truncate font-mono text-white/35">{String(target)}</span>}
-        <ChevronDown className={`size-3 shrink-0 opacity-40 transition-transform duration-500 ${EASE} ${open ? "rotate-180" : ""}`} />
+        <ChevronDown
+          className={`size-3 shrink-0 opacity-40 transition-transform duration-500 ${EASE} ${open ? "rotate-180" : ""}`}
+        />
       </button>
       {open && (
         <pre className="mt-1.5 max-h-64 overflow-auto rounded-xl border border-white/[0.06] bg-black/50 p-3 font-mono text-[11px] leading-relaxed text-white/50">
@@ -301,7 +308,10 @@ export function SettingsDialog({
     "mt-2 w-full rounded-xl border border-white/10 bg-black/40 px-3.5 py-2.5 font-mono text-sm outline-none transition-colors duration-500 focus:border-blox/60";
   return (
     <div className="fixed inset-0 z-50 grid place-items-center bg-black/70 p-4 backdrop-blur-md" onClick={onClose}>
-      <div onClick={(e) => e.stopPropagation()} className="w-full max-w-md rounded-[2rem] border border-white/10 bg-white/[0.03] p-1.5">
+      <div
+        onClick={(e) => e.stopPropagation()}
+        className="w-full max-w-md rounded-[2rem] border border-white/10 bg-white/[0.03] p-1.5"
+      >
         <div className="rounded-[calc(2rem-0.375rem)] bg-[#0d0d10] p-6 shadow-[inset_0_1px_1px_rgba(255,255,255,0.07)]">
           <p className="text-[10px] font-medium tracking-[0.2em] text-white/40 uppercase">Settings</p>
           <h2 className="mt-1 font-display text-2xl font-bold tracking-tight">AI model</h2>
@@ -312,7 +322,9 @@ export function SettingsDialog({
                 key={id}
                 onClick={() => setDraft({ ...draft, provider: id })}
                 className={`rounded-full py-2 text-sm transition-all duration-500 ${EASE} ${
-                  draft.provider === id ? "bg-white/10 text-white shadow-[inset_0_1px_1px_rgba(255,255,255,0.08)]" : "text-white/45 hover:text-white/80"
+                  draft.provider === id
+                    ? "bg-white/10 text-white shadow-[inset_0_1px_1px_rgba(255,255,255,0.08)]"
+                    : "text-white/45 hover:text-white/80"
                 }`}
               >
                 {PROVIDERS[id].label}
@@ -353,6 +365,30 @@ export function SettingsDialog({
             . Leave empty to use the server&apos;s key, if it has one.
           </p>
 
+          <div className="mt-6 border-t border-white/[0.07] pt-5">
+            <label className="block text-sm text-white/55">OpenRouter API key</label>
+            <input
+              type="password"
+              autoComplete="off"
+              placeholder="sk-or-…"
+              value={draft.openrouterKey}
+              onChange={(e) => setDraft({ ...draft, openrouterKey: e.target.value })}
+              className={field}
+            />
+            <p className="mt-2 text-xs leading-relaxed text-white/35">
+              Used by the Nodes tab to generate images, video and 3D models. Get one at{" "}
+              <a
+                href="https://openrouter.ai/keys"
+                target="_blank"
+                rel="noreferrer"
+                className="text-blox-soft hover:underline"
+              >
+                openrouter.ai
+              </a>
+              . Stored only in this browser.
+            </p>
+          </div>
+
           <div className="mt-7 flex items-center justify-end gap-2">
             <button onClick={onClose} className="rounded-full px-4 py-2 text-sm text-white/50 hover:text-white">
               Cancel
@@ -365,7 +401,9 @@ export function SettingsDialog({
               className={`group flex items-center gap-2 rounded-full bg-blox py-1.5 pr-1.5 pl-4 text-sm font-medium text-white shadow-[inset_0_1px_1px_rgba(255,255,255,0.3)] transition-transform duration-500 ${EASE} active:scale-[0.97]`}
             >
               Save
-              <span className={`grid size-7 place-items-center rounded-full bg-white/15 transition-transform duration-500 ${EASE} group-hover:translate-x-0.5`}>
+              <span
+                className={`grid size-7 place-items-center rounded-full bg-white/15 transition-transform duration-500 ${EASE} group-hover:translate-x-0.5`}
+              >
                 <ArrowUpRight className="size-3.5" />
               </span>
             </button>

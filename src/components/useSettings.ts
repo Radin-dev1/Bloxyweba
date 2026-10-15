@@ -8,6 +8,8 @@ export type Settings = {
   provider: ProviderId;
   models: Record<ProviderId, string>;
   apiKeys: Record<ProviderId, string>;
+  /** For the generation nodes (images, video, 3D as code). */
+  openrouterKey: string;
 };
 
 const KEY = "bloxy.settings";
@@ -16,6 +18,7 @@ const DEFAULTS: Settings = {
   provider: "claude",
   models: { claude: PROVIDERS.claude.defaultModel, gemini: PROVIDERS.gemini.defaultModel },
   apiKeys: { claude: "", gemini: "" },
+  openrouterKey: "",
 };
 
 function load(): Settings {
@@ -27,6 +30,7 @@ function load(): Settings {
       provider: saved.provider && saved.provider in PROVIDERS ? saved.provider : DEFAULTS.provider,
       models: { ...DEFAULTS.models, ...saved.models },
       apiKeys: { ...DEFAULTS.apiKeys, ...saved.apiKeys },
+      openrouterKey: typeof saved.openrouterKey === "string" ? saved.openrouterKey : "",
     };
   } catch {
     return DEFAULTS;

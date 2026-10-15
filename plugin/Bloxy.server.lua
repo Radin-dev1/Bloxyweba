@@ -25,7 +25,7 @@ if RunService:IsRunning() and not RunService:IsEdit() then
 end
 
 local DEFAULT_SERVER = "http://localhost:3000"
-local PLUGIN_VERSION = "0.2.0"
+local PLUGIN_VERSION = "0.3.0"
 local MAX_RESULT_CHARS = 200000
 -- The 3D snapshot is sent straight to the website, not to the AI, so it may be bigger.
 local MAX_SCENE_CHARS = 1500000
@@ -728,6 +728,58 @@ function tools.get_scene(args)
 		truncated = truncated,
 		camera = camPos and { position = camPos, target = camLook } or nil,
 	}
+end
+
+-- Builds a generated model ("3D as code" from the website) as one anchored Model,
+-- centred on the ground where the Studio camera is looking. One undo step.
+function tools.insert_parts(args)
+	if typeof(args.parts) ~= "table" or #args.parts == 0 then
+		error("parts must be a non-empty list")
+	end
+	local origin
+	if typeof(args.at) == "table" then
+		origin = Vector3.new(args.at[1] or 0, args.at[2] or 0, args.at[3] or 0)
+	else
+		local cam = workspace.CurrentCamera
+		local focus = cam and cam.Focus.Position or Vector3.zero
+		origin = Vector3.new(focus.X, 0, focus.Z)
+	end
+	return withUndo("insert " .. tostring(args.name or "model"), function()
+		local model = Instance.new("Model")
+		model.Name = tostring(args.name or "BloxyModel")
+		local shapes = { Block = Enum.PartType.Block, Ball = Enum.PartType.Ball, Cylinder = Enum.PartType.Cylinder }
+		for i, spec in ipairs(args.parts) do
+			local part
+			if spec.shape == "Wedge" then
+				part = Instance.new("WedgePart")
+			else
+				part = Instance.new("Part")
+				part.Shape = shapes[spec.shape] or Enum.PartType.Block
+			end
+			part.Name = tostring(spec.name or ("Part" .. i))
+			part.Anchored = true
+			local s, p, r = spec.size or {}, spec.position or {}, spec.rotation or {}
+			part.Size = Vector3.new(s[1] or 1, s[2] or 1, s[3] or 1)
+			part.CFrame = CFrame.new(origin + Vector3.new(p[1] or 0, p[2] or 0, p[3] or 0))
+				* CFrame.fromOrientation(math.rad(r[1] or 0), math.rad(r[2] or 0), math.rad(r[3] or 0))
+			pcall(function()
+				part.Color = Color3.fromHex(tostring(spec.color or "a3a2a5"))
+			end)
+			pcall(function()
+				part.Material = Enum.Material[spec.material or "Plastic"]
+			end)
+			part.Transparency = tonumber(spec.transparency) or 0
+			part.TopSurface = Enum.SurfaceType.Smooth
+			part.BottomSurface = Enum.SurfaceType.Smooth
+			part.Parent = model
+			if i == 1 then
+				model.PrimaryPart = part
+			end
+		end
+		model.Parent = workspace
+		Selection:Set({ model })
+		return { path = pathOf(model), parts = #args.parts }
+	end)
 end
 
 function tools.set_selection(args)

@@ -74,8 +74,16 @@ The plugin's website URL must use HTTPS in production. Studio asks the user once
 ## The Studio app
 
 - **3D Workspace**: a Roblox Studio–style view of your place: sky, a 4-stud grid on every surface, Explorer tree with search, Properties panel, Select/Move/Scale/Rotate tools (Ctrl+1–4, 1-stud / 15° snapping) and a view cube. Parts stream from the plugin with `get_scene`. Selection syncs to Studio, and edits from the gizmo or Properties go to Studio as undoable `set_properties` calls. Before you connect, a demo place lets you try everything locally.
-- **Nodes**: chain build steps (Step and Check nodes) into a workflow and run it. Each node is sent to the agent in order through the same conversation, with live status on every node. Templates: lava obby, coin collector, tycoon starter.
+- **Nodes**: a canvas for generating assets and chaining work, with a bottom toolbar (Select, Hand, Note, then Text, 3D, Upload, Video, Image, Studio step, Check). Wires carry data: Text → prompts, Image/Upload → reference or first frame, 3D → Studio steps (the model is inserted first). **Run all** goes in dependency order. Generation uses your **OpenRouter** key (Settings):
+  - **3D Model**: "3D as code". An LLM (default `anthropic/claude-opus-5.5`) writes the object as a validated list of Roblox parts. It previews in 3D inside the node, and **Insert into Studio** builds it as one anchored Model where the Studio camera looks (plugin 0.3.0, one undo step).
+  - **Image**: OpenRouter Images API (default `google/gemini-3.1-flash-image`).
+  - **Video**: OpenRouter's async Videos API (default `google/veo-3.1-fast`), polled until done.
+  - Models are free-text fields with suggestions from OpenRouter's live model lists.
 - **Chat dock**: the prompt bar floats over the workspace, and the conversation shows live tool calls.
+
+### Matching Roblox Studio's look
+
+The workspace uses Roblox's own baseplate texture (`public/roblox/baseplate.png`, from a Studio export). For Studio's sky, put the six Sky faces in `public/roblox/sky/` as `rt.png`, `lf.png`, `up.png`, `dn.png`, `bk.png`, `ft.png` (SkyboxRt/Lf/Up/Dn/Bk/Ft) and set `HAS_SKYBOX = true` in `src/components/studio/Viewport3D.tsx`.
 
 ## Studio tools
 

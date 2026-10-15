@@ -97,11 +97,28 @@ export function isBaseplate(p: ScenePart) {
   return p.shape === "Block" && /(^|\.)Baseplate$/.test(p.path);
 }
 
+/** How a part is drawn: baseplates get Bloxy's endless grey look, everything else as-is. */
+function displayPart(p: ScenePart): ScenePart {
+  if (!isBaseplate(p)) return p;
+  return {
+    ...p,
+    color: BASEPLATE_COLOR,
+    size: [Math.max(p.size[0], BASEPLATE_DISPLAY_SIZE), p.size[1], Math.max(p.size[2], BASEPLATE_DISPLAY_SIZE)],
+  };
+}
+
 /**
  * Roblox's baseplate Texture (rbxassetid://6372755229, exported from Studio), tiled every
  * 8 studs on the top face at Transparency 0.8, exactly as in a new Studio place.
  */
 const BASEPLATE_TEXTURE_URL = "/roblox/baseplate.png";
+// In Bloxy every baseplate is drawn in Studio's default grey and stretched far past the
+// camera's reach so nobody sees its edge. Display only: Studio's real part is unchanged,
+// and Explorer/Properties still show its true size and color.
+const BASEPLATE_COLOR = "5b5b5b";
+const BASEPLATE_DISPLAY_SIZE = 60_000;
+const FOG_NEAR = 1_500;
+const FOG_FAR = 9_000;
 const BASEPLATE_STUDS_PER_TILE = 8;
 const BASEPLATE_TEXTURE_TRANSPARENCY = 0.8;
 
@@ -148,7 +165,7 @@ function BaseplateTexture({ part }: { part: ScenePart }) {
 
 type Group = { key: string; shape: string; neon: boolean; transparent: boolean; indices: number[] };
 
-function groupParts(parts: ScenePart[]): Group[] {
+export function groupParts(parts: ScenePart[]): Group[] {
   const groups = new Map<string, Group>();
   parts.forEach((p, i) => {
     const shape = shapeKey(p.shape);
@@ -162,7 +179,7 @@ function groupParts(parts: ScenePart[]): Group[] {
   return [...groups.values()];
 }
 
-function PartGroup({ group, parts, onPick }: { group: Group; parts: ScenePart[]; onPick: (index: number) => void }) {
+export function PartGroup({ group, parts, onPick }: { group: Group; parts: ScenePart[]; onPick: (index: number) => void }) {
   const ref = useRef<THREE.InstancedMesh>(null);
   const geometry = useMemo(() => GEOMETRY[group.shape](), [group.shape]);
   const material = useMemo(
@@ -385,7 +402,7 @@ function CameraRig({ scene, fitKey }: { scene: Scene | null; fitKey: number }) {
       camera.position.copy(center).add(new THREE.Vector3(1, 0.75, 1).normalize().multiplyScalar(radius * 1.8));
       orbit.target.copy(center);
     }
-    camera.far = Math.max(5000, box.isEmpty() ? 0 : box.getSize(v).length() * 6);
+    camera.far = Math.max(20000, box.isEmpty() ? 0 : box.getSize(v).length() * 6);
     camera.updateProjectionMatrix();
     orbit.update();
     invalidate();
@@ -412,8 +429,9 @@ export default function Viewport3D({
   onEdit: (index: number, edit: PartEdit) => void;
 }) {
   const parts = useMemo(() => scene?.parts ?? [], [scene]);
-  const groups = useMemo(() => groupParts(parts), [parts]);
-  const baseplates = useMemo(() => parts.filter(isBaseplate), [parts]);
+  const drawn = useMemo(() => parts.map(displayPart), [parts]);
+  const groups = useMemo(() => groupParts(drawn), [drawn]);
+  const baseplates = useMemo(() => drawn.filter(isBaseplate), [drawn]);
   const selectedPart = selected !== null ? parts[selected] : undefined;
 
   return (
@@ -421,7 +439,7 @@ export default function Viewport3D({
       frameloop="demand"
       shadows
       dpr={[1, 2]}
-      camera={{ fov: 50, near: 0.1, far: 5000, position: [60, 45, 60] }}
+      camera={{ fov: 50, near: 0.5, far: 20000, position: [60, 45, 60] }}
       onPointerMissed={(e) => {
         // A click on empty sky deselects, like Studio. Ignore gizmo drags that end off-part.
         if (e.type === "click" && Date.now() - lastGizmoUse > 400) onSelect(null);
@@ -429,6 +447,7 @@ export default function Viewport3D({
       gl={{ antialias: true }}
     >
       <SkyBackground />
+      <fog attach="fog" args={[SKY_HORIZON, FOG_NEAR, FOG_FAR]} />
       <hemisphereLight args={["#ffffff", "#8a8f99", 1.05]} />
       <directionalLight
         position={[140, 260, 90]}
@@ -447,7 +466,13 @@ export default function Viewport3D({
       <ambientLight intensity={0.18} />
 
       {groups.map((g) => (
-        <PartGroup key={`${scene?.fetchedAt}-${g.key}`} group={g} parts={parts} onPick={(i) => onSelect(i)} />
+        <PartGroup
+          key={`${scene?.fetchedAt}-${g.key}`}
+          group={g}
+          parts={drawn}
+          // Like Studio's Locked Baseplate: clicking it deselects instead of grabbing it.
+          onPick={(i) => onSelect(isBaseplate(parts[i]) ? null : i)}
+        />
       ))}
       <Suspense fallback={null}>
         {baseplates.map((p) => (
