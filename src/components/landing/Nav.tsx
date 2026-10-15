@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { ArrowUpRight, BloxyMark } from "./icons";
+import { ArrowUpRight, BloxyLogo } from "./icons";
 
 const LINKS = [
   { href: "#how", label: "How it works" },
@@ -24,8 +24,7 @@ export default function Nav() {
     <>
       <header className="fixed inset-x-0 top-0 z-50 flex items-center justify-between px-4 pt-4 md:px-8 md:pt-6">
         <a href="#" className="flex items-center gap-2.5" aria-label="Bloxy home">
-          <BloxyMark className="size-8" />
-          <span className="font-display text-xl font-bold tracking-tight">Bloxy</span>
+          <BloxyLogo className="text-[26px] text-white" />
         </a>
 
         {/* Floating glass island, detached from the edges. */}

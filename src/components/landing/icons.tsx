@@ -64,22 +64,39 @@ export const ArrowUp = ({ className }: P) => (
   <svg {...base} className={className} strokeWidth={1.75}><path d="M12 19V5M6 11l6-6 6 6" /></svg>
 );
 
+// Brand artwork from brand/logo/ (Spark Brick). Keep these paths in sync with the SVG masters.
+const SYMBOL_PATH =
+  "M82 28h92a54 54 0 0 1 54 54v92a54 54 0 0 1-54 54H82a54 54 0 0 1-54-54V82a54 54 0 0 1 54-54Z M74 104a21 21 0 1 0 42 0a21 21 0 1 0 -42 0Z M163 75c3.6 17.4 11.6 25.4 29 29-17.4 3.6-25.4 11.6-29 29-3.6-17.4-11.6-25.4-29-29 17.4-3.6 25.4-11.6 29-29Z M86 150h84a42 42 0 0 1-84 0Z";
+
+const WORDMARK_PATH =
+  "M17 24a17 17 0 0 1 17 17v39h46a44 44 0 0 1 44 44v32a44 44 0 0 1-44 44H44A44 44 0 0 1 0 156V41a17 17 0 0 1 17-17Z M48 114a14 14 0 0 0-14 14v24a14 14 0 0 0 14 14h28a14 14 0 0 0 14-14v-24a14 14 0 0 0-14-14Z M159 24a17 17 0 0 1 17 17v142a17 17 0 0 1-34 0V41a17 17 0 0 1 17-17Z M238 80h36a44 44 0 0 1 44 44v32a44 44 0 0 1-44 44h-36a44 44 0 0 1-44-44v-32a44 44 0 0 1 44-44Z M242 114a14 14 0 0 0-14 14v24a14 14 0 0 0 14 14h28a14 14 0 0 0 14-14v-24a14 14 0 0 0-14-14Z M479 80a17 17 0 0 1 17 17v39a14 14 0 0 0 14 14h28a14 14 0 0 0 14-14V97a17 17 0 0 1 34 0v109a44 44 0 0 1-44 44h-45a17 17 0 0 1 0-34h45a10 10 0 0 0 10-10v-22h-38a44 44 0 0 1-44-44V97a17 17 0 0 1 17-17Z";
+const WORDMARK_X = "M336 80h39.3l69.3 120h-39.3Z M405.3 80h39.3l-69.3 120H336Z";
+
+/** The Spark Brick symbol: a 2-stud brick that winks, the wink being the AI spark. */
 export function BloxyMark({ className }: P) {
-  // Tilted block "B": a nod to Roblox's tilted square without copying it.
   return (
-    <svg viewBox="0 0 32 32" className={className} aria-hidden>
-      <defs>
-        <linearGradient id="bloxy-g" x1="0" y1="0" x2="1" y2="1">
-          <stop offset="0" stopColor="#7fb0ff" />
-          <stop offset="1" stopColor="#2f7dff" />
-        </linearGradient>
-      </defs>
-      <rect x="4" y="4" width="24" height="24" rx="7" transform="rotate(-8 16 16)" fill="url(#bloxy-g)" />
-      <path
-        d="M12.5 10.5h5.2a3.1 3.1 0 0 1 1.2 6 3.3 3.3 0 0 1-1 6.5h-5.4v-12.5Zm2.6 2.3v3h2.4a1.5 1.5 0 0 0 0-3h-2.4Zm0 5.2v2.8h2.7a1.4 1.4 0 0 0 0-2.8h-2.7Z"
-        fill="#fff"
-        transform="rotate(-8 16 16)"
-      />
+    <svg viewBox="28 28 200 200" className={className} aria-hidden>
+      <path fillRule="evenodd" fill="#2F7DFF" d={SYMBOL_PATH} />
     </svg>
+  );
+}
+
+/** The custom "bloxy" wordmark; takes the text colour. */
+export function BloxyWordmark({ className }: P) {
+  return (
+    <svg viewBox="0 20 586 234" className={className} role="img" aria-label="Bloxy">
+      <path fillRule="evenodd" fill="currentColor" d={WORDMARK_PATH} />
+      <path fill="currentColor" d={WORDMARK_X} />
+    </svg>
+  );
+}
+
+/** Symbol + wordmark, the horizontal lockup. */
+export function BloxyLogo({ className, markClassName }: P & { markClassName?: string }) {
+  return (
+    <span className={`inline-flex items-center gap-[0.32em] ${className ?? ""}`}>
+      <BloxyMark className={markClassName ?? "h-[1.15em] w-auto"} />
+      <BloxyWordmark className="h-[0.92em] w-auto" />
+    </span>
   );
 }

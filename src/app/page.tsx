@@ -4,7 +4,7 @@ import Reveal from "@/components/landing/Reveal";
 import StudioMock from "@/components/landing/StudioMock";
 import {
   ArrowUpRight,
-  BloxyMark,
+  BloxyLogo,
   Code,
   Cube,
   Download,
@@ -383,8 +383,7 @@ export default function Landing() {
       <footer className="px-4 pb-10 md:px-8">
         <div className="mx-auto flex max-w-6xl flex-col items-center justify-between gap-4 border-t border-white/[0.06] pt-8 text-sm text-white/35 sm:flex-row">
           <div className="flex items-center gap-2">
-            <BloxyMark className="size-5" />
-            <span>Bloxy</span>
+            <BloxyLogo className="text-[18px] text-white/60" />
           </div>
           <p>Not affiliated with Roblox Corporation.</p>
           <a href="https://github.com/Radin-dev1/Bloxyweba" className="hover:text-white/70">

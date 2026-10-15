@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256">
+  <title>Bloxy concept A, Brick Bubble</title>
+  <!-- One brick with two studs on top; a speech tail from its lower-left corner. -->
+  <path fill="#000" d="M70 52h32a6 6 0 0 1 6 6v14H64V58a6 6 0 0 1 6-6Z M154 52h32a6 6 0 0 1 6 6v14h-44V58a6 6 0 0 1 6-6Z"/>
+  <path fill="#000" d="M58 72h140a30 30 0 0 1 30 30v62a30 30 0 0 1-30 30H112l-62 36 18-36h-10a30 30 0 0 1-30-30v-62a30 30 0 0 1 30-30Z"/>
+</svg>

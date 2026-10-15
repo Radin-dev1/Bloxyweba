@@ -6,7 +6,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { PROVIDERS } from "@/lib/agent/providers";
 import { useStudioSession } from "../useStudioSession";
 import { useSettings } from "../useSettings";
-import { ArrowUp, BloxyMark, ChevronDown, Settings as Gear, Sparkle, Stop } from "../landing/icons";
+import { ArrowUp, BloxyMark, BloxyWordmark, ChevronDown, Settings as Gear, Sparkle, Stop } from "../landing/icons";
 import { demoScene } from "./demoScene";
 import Explorer from "./Explorer";
 import { ConnectionPill, MessageView, PairPanel, SettingsDialog } from "./parts";
@@ -151,7 +151,7 @@ export default function StudioApp() {
           className="pointer-events-auto flex items-center gap-2 rounded-full border border-white/10 bg-[#111318]/85 py-1 pr-3.5 pl-1 backdrop-blur-xl"
         >
           <BloxyMark className="size-7" />
-          <span className="hidden font-display text-[15px] font-bold tracking-tight sm:inline">Bloxy</span>
+          <BloxyWordmark className="hidden h-[15px] w-auto text-white sm:block" />
         </Link>
 
         <div className="pointer-events-auto absolute left-1/2 flex -translate-x-1/2 items-center gap-1 rounded-full border border-white/10 bg-[#111318]/85 p-1 backdrop-blur-xl">

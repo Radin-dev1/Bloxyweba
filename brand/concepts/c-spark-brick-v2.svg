@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256">
+  <title>Bloxy concept C, Spark Brick</title>
+  <!-- Top-down 2-stud brick: left stud round, right stud a 4-point AI spark (a wink), crescent smile. -->
+  <path fill-rule="evenodd" fill="#000" d="
+    M82 28h92a54 54 0 0 1 54 54v92a54 54 0 0 1-54 54H82a54 54 0 0 1-54-54V82a54 54 0 0 1 54-54Z
+    M76 104a20 20 0 1 0 40 0a20 20 0 1 0 -40 0Z
+    M162 76c3.4 16.6 11.4 24.6 28 28-16.6 3.4-24.6 11.4-28 28-3.4-16.6-11.4-24.6-28-28 16.6-3.4 24.6-11.4 28-28Z
+    M86 150h84a42 42 0 0 1-84 0Z"/>
+</svg>

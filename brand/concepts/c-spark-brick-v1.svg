@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256">
+  <!-- C: top-down 2-stud brick; left stud round, right stud a 4-point spark (wink); smile crescent -->
+  <path fill-rule="evenodd" fill="#000" d="
+    M80 28h96a52 52 0 0 1 52 52v96a52 52 0 0 1-52 52H80a52 52 0 0 1-52-52V80a52 52 0 0 1 52-52Z
+    M90 106a22 22 0 1 0 0.01 0Z
+    M166 80c3 16 10 23 26 26-16 3-23 10-26 26-3-16-10-23-26-26 16-3 23-10 26-26Z
+    M84 150h88a44 44 0 0 1-88 0Z"/>
+</svg>

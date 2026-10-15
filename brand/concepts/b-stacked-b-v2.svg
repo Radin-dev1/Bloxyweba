@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256">
+  <title>Bloxy concept B, Stacked B</title>
+  <!-- Stem + two brick bowls (the lower one wider, like a base brick); stud counters; mortar notch between. -->
+  <rect x="60" y="36" width="52" height="184" rx="10" fill="#000"/>
+  <path fill-rule="evenodd" fill="#000" d="M60 36h88a40 40 0 0 1 40 40v6a40 40 0 0 1-40 40H60Z M136 79a16 16 0 1 0 32 0a16 16 0 1 0 -32 0Z"/>
+  <path fill-rule="evenodd" fill="#000" d="M60 134h100a43 43 0 0 1 0 86H60Z M144 177a18 18 0 1 0 36 0a18 18 0 1 0 -36 0Z"/>
+</svg>

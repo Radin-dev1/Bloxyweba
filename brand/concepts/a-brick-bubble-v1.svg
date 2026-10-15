@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256">
+  <!-- A: chat bubble laid as two staggered bricks; tail from the lower brick -->
+  <rect x="56" y="44" width="168" height="76" rx="22" fill="#000"/>
+  <path d="M54 134h144a22 22 0 0 1 22 22v32a22 22 0 0 1-22 22H104l-52 34 14-34h-12a22 22 0 0 1-22-22v-32a22 22 0 0 1 22-22Z" fill="#000"/>
+</svg>

@@ -1,0 +1,33 @@
+{
+  "brand": "Bloxy",
+  "tagline": "Build Roblox games by talking to Studio",
+  "brief": "An AI agent that builds inside Roblox Studio while you describe what you want. For young Roblox creators. It should feel playful, clever, quick and friendly, and stay clearly apart from Roblox's own tilted-square mark.",
+  "adjectives": ["playful", "clever", "quick", "friendly"],
+  "criteria": "Recognisable at 16 px, works in one colour, ownable among Roblox AI tools, never mistaken for the Roblox logo.",
+  "mockups": ["app-icon", "website", "favicon-tab", "readme", "sticker", "social"],
+  "nav": ["Studio", "How it works", "FAQ"],
+  "brand_color": "#2F7DFF",
+  "greyscale": false,
+  "final": true,
+  "designer": "Bloxy",
+  "concepts": [
+    {
+      "name": "Spark Brick",
+      "symbol": "../logo/bloxy-symbol.svg",
+      "lockup": "../logo/bloxy-horizontal.svg",
+      "stacked": "../logo/bloxy-stacked.svg",
+      "symbol_on_tile": "../logo/bloxy-app-icon.svg",
+      "lockup_on_dark": "../logo/bloxy-horizontal-reversed.svg",
+      "stacked_on_dark": "../logo/bloxy-stacked-reversed.svg",
+      "symbol_on_dark": "../logo/bloxy-symbol.svg",
+      "idea": "A 2-stud brick that winks: one stud is the AI spark.",
+      "rationale": [
+        "A brick that's also a buddy: playful and friendly for young creators",
+        "The spark carries the AI part without a robot or a cliché chip",
+        "Upright and rounded, so it never reads as Roblox's tilted square",
+        "Holds at 16 px with a dedicated small-size cut"
+      ]
+    }
+  ],
+  "recommendation": "Spark Brick in Blox Blue #2F7DFF with the custom rounded 'bloxy' wordmark."
+}

@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256">
+  <!-- B: stem + two brick bowls (lower one wider), stud counters, mortar notch between bowls -->
+  <rect x="60" y="36" width="52" height="184" rx="10" fill="#000"/>
+  <path fill-rule="evenodd" fill="#000" d="M60 36h88a40 40 0 0 1 40 40v6a40 40 0 0 1-40 40H60Z M150 79a17 17 0 1 0 0 0.01Z"/>
+  <path fill-rule="evenodd" fill="#000" d="M60 134h100a43 43 0 0 1 43 43v0a43 43 0 0 1-43 43H60Z M160 177a19 19 0 1 0 0 0.01Z"/>
+</svg>

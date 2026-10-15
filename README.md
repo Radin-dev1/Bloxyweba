@@ -85,6 +85,10 @@ Every change goes through `ChangeHistoryService`, so **Ctrl+Z** in Studio undoes
 
 To add a tool, define it in `src/lib/tools.ts` and add a function with the same name to the `tools` table in `plugin/Bloxy.server.lua`.
 
+## Brand
+
+The logo (Spark Brick, a 2-stud brick that winks) and its full kit live in `brand/`: master SVGs, lockups, one-colour and reversed versions, a web icon set, a presentation board and [usage guidelines](brand/GUIDELINES.md). The site uses them through `BloxyMark` / `BloxyWordmark` / `BloxyLogo` in `src/components/landing/icons.tsx`, plus Next's `icon.svg`, `apple-icon.png`, `favicon.ico` and `opengraph-image.png` in `src/app/`.
+
 ## Testing
 
 ```bash
