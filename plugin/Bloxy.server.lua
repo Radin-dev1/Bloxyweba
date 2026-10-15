@@ -25,8 +25,10 @@ if RunService:IsRunning() and not RunService:IsEdit() then
 end
 
 local DEFAULT_SERVER = "http://localhost:3000"
-local PLUGIN_VERSION = "0.1.0"
+local PLUGIN_VERSION = "0.2.0"
 local MAX_RESULT_CHARS = 200000
+-- The 3D snapshot is sent straight to the website, not to the AI, so it may be bigger.
+local MAX_SCENE_CHARS = 1500000
 
 --------------------------------------------------------------------------------
 -- Paths
@@ -674,6 +676,60 @@ function tools.insert_asset(args)
 	end)
 end
 
+-- Compact snapshot of every visible BasePart for the website's 3D workspace.
+-- Arrays instead of keyed tables keep the JSON small for big places.
+function tools.get_scene(args)
+	local root = resolve(args.root or "Workspace")
+	local limit = math.clamp(args.limit or 3000, 1, 8000)
+	local parts = {}
+	local truncated = false
+	for _, inst in ipairs(root:GetDescendants()) do
+		if inst:IsA("BasePart") and not inst:IsA("Terrain") and inst.Transparency < 1 then
+			if #parts >= limit then
+				truncated = true
+				break
+			end
+			local shape = "Block"
+			if inst:IsA("Part") then
+				shape = inst.Shape.Name
+			elseif inst:IsA("WedgePart") then
+				shape = "Wedge"
+			elseif inst:IsA("CornerWedgePart") then
+				shape = "CornerWedge"
+			elseif inst:IsA("MeshPart") then
+				shape = "Mesh"
+			end
+			local cf = inst.CFrame
+			local x, y, z, r00, r01, r02, r10, r11, r12, r20, r21, r22 = cf:GetComponents()
+			local s = inst.Size
+			local c = inst.Color
+			table.insert(parts, {
+				pathOf(inst),
+				shape,
+				{ round(s.X), round(s.Y), round(s.Z) },
+				{ round(x), round(y), round(z), round(r00), round(r01), round(r02), round(r10), round(r11), round(r12), round(r20), round(r21), round(r22) },
+				string.format("%02x%02x%02x", math.floor(c.R * 255 + 0.5), math.floor(c.G * 255 + 0.5), math.floor(c.B * 255 + 0.5)),
+				round(inst.Transparency),
+				inst.Material.Name,
+			})
+		end
+	end
+	local cam = workspace.CurrentCamera
+	local camPos, camLook
+	if cam then
+		camPos = { round(cam.CFrame.X), round(cam.CFrame.Y), round(cam.CFrame.Z) }
+		local look = cam.CFrame.Position + cam.CFrame.LookVector * 50
+		camLook = { round(look.X), round(look.Y), round(look.Z) }
+	end
+	return {
+		format = "bloxy-scene-1",
+		fields = { "path", "shape", "size", "cframe", "color", "transparency", "material" },
+		parts = parts,
+		truncated = truncated,
+		camera = camPos and { position = camPos, target = camLook } or nil,
+	}
+end
+
 function tools.set_selection(args)
 	local list = {}
 	for _, p in ipairs(args.paths or {}) do
@@ -736,7 +792,7 @@ local function request(method, route, body)
 	return res, decoded
 end
 
-local function encodeResult(id, ok, value)
+local function encodeResult(id, ok, value, maxChars)
 	local payload = { id = id, ok = ok }
 	if ok then
 		payload.result = value
@@ -746,7 +802,7 @@ local function encodeResult(id, ok, value)
 	local encodedOk, encoded = pcall(HttpService.JSONEncode, HttpService, payload)
 	if not encodedOk then
 		payload = { id = id, ok = false, error = "Result could not be encoded as JSON: " .. tostring(encoded) }
-	elseif #encoded > MAX_RESULT_CHARS then
+	elseif #encoded > (maxChars or MAX_RESULT_CHARS) then
 		payload = {
 			id = id,
 			ok = false,
@@ -765,7 +821,8 @@ local function handleCommand(cmd)
 		ok, result = pcall(fn, cmd.args or {})
 	end
 	logLine((ok and "✓ " or "✗ ") .. tostring(cmd.tool))
-	request("POST", "/api/plugin/result", encodeResult(cmd.id, ok, result))
+	local maxChars = cmd.tool == "get_scene" and MAX_SCENE_CHARS or MAX_RESULT_CHARS
+	request("POST", "/api/plugin/result", encodeResult(cmd.id, ok, result, maxChars))
 end
 
 local function stopLoop()

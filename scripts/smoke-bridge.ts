@@ -1,64 +1,156 @@
 /**
- * Smoke test for the Studio bridge without Studio or an AI key:
- * a fake plugin long-polls and answers, while the agent-side executor calls tools.
+ * Smoke test for the Studio bridge without Studio or an AI key. Runs the same scenario
+ * against both backends: in-memory, and Redis (using a tiny in-process fake of the
+ * Upstash commands the bridge uses). A fake plugin long-polls and answers commands.
  *
  *   npx tsx scripts/smoke-bridge.ts
  */
 import assert from "node:assert/strict";
-import { connectPlugin, createSession, pollCommands, submitResult } from "@/lib/bridge";
-import { makeStudioExecutor, type AgentEvent } from "@/lib/agent";
+import type { Redis } from "@upstash/redis";
+import { memoryBridge } from "@/lib/bridge/memory";
+import { createRedisBridge } from "@/lib/bridge/redis";
+import type { Bridge, CommandResult } from "@/lib/bridge/types";
+import { validateToolInput } from "@/lib/tools";
 
-async function main() {
-  const { sessionId, pairCode } = createSession();
-  const events: AgentEvent[] = [];
-  const execute = makeStudioExecutor(sessionId, (e) => events.push(e));
+/** Just enough of @upstash/redis for the bridge, with string values and no expiry. */
+class FakeRedis {
+  kv = new Map<string, string>();
+  hashes = new Map<string, Record<string, string>>();
+  lists = new Map<string, string[]>();
+  async hgetall(k: string) {
+    return this.hashes.get(k) ?? null;
+  }
+  async hset(k: string, v: Record<string, unknown>) {
+    const h = this.hashes.get(k) ?? {};
+    for (const [f, x] of Object.entries(v)) h[f] = String(x);
+    this.hashes.set(k, h);
+    return Object.keys(v).length;
+  }
+  async expire() {
+    return 1;
+  }
+  async set(k: string, v: string, o?: { nx?: boolean }) {
+    if (o?.nx && this.kv.has(k)) return null;
+    this.kv.set(k, String(v));
+    return "OK";
+  }
+  async get(k: string) {
+    return this.kv.get(k) ?? null;
+  }
+  async getdel(k: string) {
+    const v = this.kv.get(k) ?? null;
+    this.kv.delete(k);
+    return v;
+  }
+  async del(...ks: string[]) {
+    let n = 0;
+    for (const k of ks) n += Number(this.kv.delete(k) || this.hashes.delete(k) || this.lists.delete(k));
+    return n;
+  }
+  async lpop(k: string, count = 1) {
+    const l = this.lists.get(k) ?? [];
+    const out = l.splice(0, count);
+    return out.length ? out : null;
+  }
+  async rpush(k: string, ...v: string[]) {
+    const l = this.lists.get(k) ?? [];
+    l.push(...v);
+    this.lists.set(k, l);
+    return l.length;
+  }
+  async lrem(k: string, _n: number, v: string) {
+    const l = this.lists.get(k) ?? [];
+    const kept = l.filter((x) => x !== v);
+    this.lists.set(k, kept);
+    return l.length - kept.length;
+  }
+  pipeline() {
+    const ops: (() => Promise<unknown>)[] = [];
+    const chain: Record<string, unknown> = {
+      exec: () => Promise.all(ops.map((op) => op())),
+    };
+    for (const m of ["hset", "expire", "set", "del", "rpush", "lrem"] as const) {
+      chain[m] = (...args: unknown[]) => {
+        ops.push(() => (this[m] as (...a: unknown[]) => Promise<unknown>)(...args));
+        return chain;
+      };
+    }
+    return chain;
+  }
+}
+
+async function scenario(bridge: Bridge) {
+  const { sessionId, pairCode } = await bridge.createSession();
+
+  // Same validation path the agent uses, then into Studio.
+  const execute = async (name: string, input: unknown): Promise<CommandResult> => {
+    const v = validateToolInput(name, input);
+    if (!v.ok) return { ok: false, error: v.error };
+    return bridge.runInStudio(sessionId, name, v.data, 5_000);
+  };
 
   // Not paired yet -> clear error, no hang.
-  const offline = await execute("c0", "get_studio_state", {});
+  const offline = await execute("get_studio_state", {});
   assert.equal(offline.ok, false);
-  assert.match(offline.content, /not connected/);
+  assert.match((offline as { error: string }).error, /not connected/);
 
-  const paired = connectPlugin(pairCode, { placeName: "Smoke" });
-  assert.ok(paired);
+  assert.equal(await bridge.connectPlugin("ZZZZZZ", null), null, "bad code rejected");
+  const paired = await bridge.connectPlugin(pairCode.toLowerCase(), { placeName: "Smoke" });
+  assert.ok(paired, "pair code works (case-insensitive)");
+  assert.equal(await bridge.connectPlugin(pairCode, null), null, "pair code is one-time");
   const token = paired.pluginToken;
+
+  const status = await bridge.getSessionStatus(sessionId);
+  assert.equal(status?.connected, true);
+  assert.deepEqual(status?.studioInfo, { placeName: "Smoke" });
+  assert.equal(await bridge.pollCommands("nope"), null, "unknown token rejected");
 
   // Fake plugin: answer every command by echoing it back.
   let running = true;
   const plugin = (async () => {
     while (running) {
-      const cmds = (await pollCommands(token, 200)) ?? [];
+      const cmds = (await bridge.pollCommands(token)) ?? [];
       for (const c of cmds) {
-        if (c.tool === "read_script") submitResult(token, c.id, { ok: false, error: "not a script" });
-        else submitResult(token, c.id, { ok: true, result: { echoed: c.tool, args: c.args } });
+        if (c.tool === "read_script") await bridge.submitResult(token, c.id, { ok: false, error: "not a script" });
+        else await bridge.submitResult(token, c.id, { ok: true, result: { echoed: c.tool, args: c.args } });
       }
     }
   })();
 
-  const ok = await execute("c1", "list_children", { path: "Workspace", depth: 2 });
-  assert.equal(ok.ok, true);
-  assert.deepEqual(JSON.parse(ok.content), { echoed: "list_children", args: { path: "Workspace", depth: 2 } });
+  const ok = await execute("list_children", { path: "Workspace", depth: 2 });
+  assert.deepEqual(ok, { ok: true, result: { echoed: "list_children", args: { path: "Workspace", depth: 2 } } });
 
-  const studioErr = await execute("c2", "read_script", { path: "Workspace.Part" });
-  assert.equal(studioErr.ok, false);
-  assert.equal(studioErr.content, "not a script");
+  const studioErr = await execute("read_script", { path: "Workspace.Part" });
+  assert.deepEqual(studioErr, { ok: false, error: "not a script" });
 
-  const invalid = await execute("c3", "set_properties", { properties: { Anchored: true } });
+  const invalid = await execute("set_properties", { properties: { Anchored: true } });
   assert.equal(invalid.ok, false);
-  assert.match(invalid.content, /Invalid arguments/);
+  assert.match((invalid as { error: string }).error, /Invalid arguments/);
 
   // Parallel calls resolve independently.
-  const many = await Promise.all(
-    Array.from({ length: 5 }, (_, i) => execute(`p${i}`, "get_output", { limit: i + 1 })),
-  );
+  const many = await Promise.all(Array.from({ length: 5 }, (_, i) => execute("get_output", { limit: i + 1 })));
   assert.ok(many.every((r) => r.ok));
 
-  assert.equal(events.filter((e) => e.type === "tool_result").length, 9);
+  // A result for someone else's command is refused.
+  assert.equal(await bridge.submitResult(token, "not-a-real-id", { ok: true, result: 1 }), false);
+
   running = false;
+  assert.equal(await bridge.disconnectPlugin(token), true);
   await plugin;
-  console.log("bridge smoke test passed");
+  assert.equal((await bridge.getSessionStatus(sessionId))?.connected, false);
 }
 
-main().catch((err) => {
-  console.error(err);
-  process.exit(1);
-});
+async function main() {
+  await scenario(memoryBridge);
+  console.log("memory bridge: passed");
+  await scenario(createRedisBridge(new FakeRedis() as unknown as Redis));
+  console.log("redis bridge: passed");
+}
+
+main().then(
+  () => process.exit(0),
+  (err) => {
+    console.error(err);
+    process.exit(1);
+  },
+);

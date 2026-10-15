@@ -1,7 +1,8 @@
 import { z } from "zod";
 import { makeStudioExecutor, PROVIDERS, runAgent, type AgentEvent } from "@/lib/agent";
 
-export const maxDuration = 800;
+// Vercel Hobby allows at most 300s per function; long agent runs continue in the next message.
+export const maxDuration = 300;
 
 const Body = z.object({
   sessionId: z.string().min(1),

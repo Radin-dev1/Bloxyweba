@@ -1,4 +1,4 @@
-import { runInStudio } from "@/lib/bridge";
+import { bridge } from "@/lib/bridge";
 import { validateToolInput } from "@/lib/tools";
 import { runClaude } from "./claude";
 import { runGemini } from "./gemini";
@@ -19,7 +19,7 @@ export function makeStudioExecutor(sessionId: string, emit: (e: AgentEvent) => v
       ok = false;
       content = valid.error;
     } else {
-      const r = await runInStudio(sessionId, name, valid.data, name === "run_luau" ? 120_000 : 60_000);
+      const r = await bridge.runInStudio(sessionId, name, valid.data, name === "run_luau" ? 120_000 : 60_000);
       ok = r.ok;
       content = r.ok ? JSON.stringify(r.result) : r.error;
     }

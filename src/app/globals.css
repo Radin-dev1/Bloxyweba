@@ -94,3 +94,38 @@ body {
   .reveal { opacity: 1; transform: none; filter: none; transition: none; }
   .animate-float, .text-shimmer, .animate-pulse-ring { animation: none; }
 }
+
+/* React Flow, themed to match the app. */
+.bloxy-flow {
+  --xy-background-color: #07080b;
+  --xy-edge-stroke: #3a4560;
+  --xy-edge-stroke-selected: #7fb0ff;
+  --xy-edge-stroke-width: 1.5;
+  --xy-connectionline-stroke: #7fb0ff;
+  --xy-controls-button-background-color: rgba(16, 17, 22, 0.9);
+  --xy-controls-button-background-color-hover: rgba(40, 44, 56, 0.95);
+  --xy-controls-button-color: #e4e4e7;
+  --xy-controls-button-border-color: rgba(255, 255, 255, 0.08);
+  --xy-minimap-background-color: rgba(12, 13, 17, 0.85);
+  --xy-node-boxshadow-selected: none;
+}
+.bloxy-flow .react-flow__controls {
+  border-radius: 14px;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: none;
+  margin-bottom: 1.25rem;
+}
+.bloxy-flow .react-flow__minimap {
+  border-radius: 14px;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  margin-bottom: 1.25rem;
+}
+.bloxy-flow .react-flow__edge.animated path {
+  stroke: #2f7dff;
+  stroke-width: 2;
+}
+@media (max-width: 1279px) {
+  .bloxy-flow .react-flow__minimap { display: none; }
+}

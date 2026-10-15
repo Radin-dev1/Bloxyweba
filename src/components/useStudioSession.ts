@@ -6,7 +6,7 @@ export type StudioStatus = {
   connected: boolean;
   pairCode: string | null;
   pairCodeExpires: number | null;
-  studioInfo: { placeName?: string; placeId?: number } | null;
+  studioInfo: { placeName?: string; placeId?: number; pluginVersion?: string } | null;
 };
 
 const SESSION_KEY = "bloxy.sessionId";
@@ -29,6 +29,7 @@ function store(id: string) {
 export function useStudioSession() {
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [status, setStatus] = useState<StudioStatus | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   const createSession = useCallback(async (refreshFor?: string) => {
     const res = await fetch("/api/session", {
@@ -36,7 +37,13 @@ export function useStudioSession() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(refreshFor ? { sessionId: refreshFor, refresh: true } : {}),
     });
-    const data = (await res.json()) as { sessionId: string; pairCode: string; pairCodeExpires: number };
+    const data = (await res.json()) as { sessionId?: string; pairCode: string; pairCodeExpires: number; error?: string };
+    if (!res.ok || !data.sessionId) {
+      // e.g. 503 on Vercel when Redis isn't set up yet: show why instead of a dead pair panel.
+      setError(data.error ?? `Could not start a session (${res.status})`);
+      return;
+    }
+    setError(null);
     store(data.sessionId);
     setSessionId(data.sessionId);
     setStatus((s) => ({
@@ -78,6 +85,7 @@ export function useStudioSession() {
           await createSession();
           return;
         }
+        if (!res.ok) return;
         setStatus((await res.json()) as StudioStatus);
       } catch {}
     };
@@ -92,5 +100,5 @@ export function useStudioSession() {
     if (sessionId) void createSession(sessionId);
   }, [sessionId, createSession]);
 
-  return { sessionId, status, newPairCode };
+  return { sessionId, status, newPairCode, error };
 }

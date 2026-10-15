@@ -1,11 +1,15 @@
-import { pollCommands } from "@/lib/bridge";
+import { bridge, bridgeErrorResponse } from "@/lib/bridge";
 
-// Roblox HttpService gives up after ~30s, so stay well under that.
-const LONG_POLL_MS = 20_000;
+// Long-poll: the bridge waits up to bridge.longPollMs (20s in memory, 10s on Redis).
+export const maxDuration = 30;
 
 export async function POST(request: Request) {
   const body = (await request.json().catch(() => ({}))) as { studio?: Record<string, unknown> };
-  const commands = await pollCommands(request.headers.get("x-bloxy-token"), LONG_POLL_MS, body.studio);
-  if (!commands) return Response.json({ error: "not_paired" }, { status: 401 });
-  return Response.json({ commands });
+  try {
+    const commands = await bridge.pollCommands(request.headers.get("x-bloxy-token"), body.studio);
+    if (!commands) return Response.json({ error: "not_paired" }, { status: 401 });
+    return Response.json({ commands });
+  } catch (err) {
+    return bridgeErrorResponse(err);
+  }
 }

@@ -19,12 +19,12 @@ Browser (chat UI) ──POST /api/chat──▶ Next.js server ──▶ Claude 
 | Path | What it is |
 | --- | --- |
 | `plugin/Bloxy.server.lua` | The Studio plugin: HTTP bridge, tool implementations and dock UI |
-| `src/lib/bridge.ts` | Sessions, pairing, command queue and long-polling (in memory) |
+| `src/lib/bridge/` | Sessions, pairing, command queue and long-polling: `memory.ts` (local) and `redis.ts` (Vercel) |
 | `src/lib/tools.ts` | Tool definitions (zod), shared by every provider, plus the system prompt |
 | `src/lib/agent/` | Agent loops for Claude (`claude.ts`) and Gemini (`gemini.ts`) |
 | `src/app/api/` | Route handlers for sessions, the plugin and chat |
 | `src/app/page.tsx`, `src/components/landing/` | Landing page (hero prompt hands off to `/studio?prompt=…`) |
-| `src/components/` | Studio chat UI, pairing panel and settings dialog |
+| `src/components/studio/` | The app at `/studio`: 3D workspace (`Viewport3D`), node editor (`NodeEditor`), chat dock, pairing and settings |
 
 ## Run it locally
 
@@ -53,9 +53,29 @@ Open http://localhost:3000 for the landing page. The app itself lives at http://
 
 ## Deploying
 
-The bridge keeps state **in memory**, so it needs one long-running Node process: `npm run build && npm start` on Render, Railway, Fly or a VPS. Serverless hosts like Vercel run several short-lived instances that don't share memory. Before deploying there, move `src/lib/bridge.ts` to Redis (for example Upstash).
+### Vercel
+
+1. Import the GitHub repo in Vercel (framework: Next.js, no extra settings).
+2. **Add Redis** (required). In the Vercel project: *Storage → Create → Upstash Redis* (free tier works), then connect it to the project. That sets `KV_REST_API_URL` / `KV_REST_API_TOKEN`, which Bloxy picks up automatically (`UPSTASH_REDIS_REST_URL` / `UPSTASH_REDIS_REST_TOKEN` also work).
+3. Redeploy. In the plugin, use your Vercel URL (e.g. `https://bloxyweba.vercel.app`) as the website URL.
+
+Why Redis: Vercel runs many short-lived function instances that don't share memory, so the plugin's poll and the agent's command can land on different instances. Without Redis on Vercel, the API answers 503 with these setup steps instead of half-working.
+
+Notes:
+- The plugin long-polls in 10 s windows and checks Redis about once a second, roughly 60 Redis commands a minute while Studio is connected. Upstash's free tier covers light use. Disconnect the plugin when you're not building.
+- Vercel Hobby caps functions at 300 s, so one agent message can run for at most 5 minutes. Say "continue" to pick up a longer job.
+
+### Any Node host
+
+`npm run build && npm start` on Render, Railway, Fly or a VPS works with no extra setup: one long-running process uses the in-memory bridge. Set the Redis variables to share state across several instances.
 
 The plugin's website URL must use HTTPS in production. Studio asks the user once to allow the domain.
+
+## The Studio app
+
+- **3D Workspace**: a live, orbitable view of your place's parts (shapes, colors, transparency, neon), streamed from the plugin with `get_scene`. Click a part to select it in Studio and inspect it. The view refreshes after Bloxy edits the place.
+- **Nodes**: chain build steps (Step and Check nodes) into a workflow and run it. Each node is sent to the agent in order through the same conversation, with live status on every node. Templates: lava obby, coin collector, tycoon starter.
+- **Chat dock**: the prompt bar floats over the workspace, and the conversation shows live tool calls.
 
 ## Studio tools
 
@@ -68,7 +88,7 @@ To add a tool, define it in `src/lib/tools.ts` and add a function with the same 
 ## Testing
 
 ```bash
-npx tsx scripts/smoke-bridge.ts   # bridge round-trip with a fake plugin, no Studio or key needed
+npx tsx scripts/smoke-bridge.ts   # both bridge backends (memory + fake Redis) with a fake plugin
 npm run lint
 npm run build
 ```
@@ -78,4 +98,3 @@ npm run build
 - OpenAI / ChatGPT provider (add `src/lib/agent/openai.ts` and an entry in `providers.ts`)
 - Playtest control and screenshots
 - Persistent chat history and accounts
-- Redis-backed bridge for serverless hosting

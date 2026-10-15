@@ -1,263 +1,15 @@
 "use client";
 
-import Link from "next/link";
-import { useEffect, useRef, useState } from "react";
-import type { AgentEvent } from "@/lib/agent/types";
+import { useState } from "react";
 import { PROVIDERS } from "@/lib/agent/providers";
-import { useStudioSession, type StudioStatus } from "./useStudioSession";
-import { useSettings, type Settings } from "./useSettings";
-import { ArrowUp, ArrowUpRight, BloxyMark, ChevronDown, Download, Settings as Gear, Stop } from "./landing/icons";
-
-type ToolCall = { id: string; name: string; args: unknown; status: "running" | "ok" | "error"; preview?: string };
-type Message = { role: "user" | "assistant"; content: string; tools: ToolCall[]; error?: string };
-
-const SUGGESTIONS = [
-  { title: "Tour my place", prompt: "Look around my place and tell me what's in it" },
-  { title: "Spinning coins", prompt: "Make a spinning coin that gives +1 Coins on touch, with leaderstats" },
-  { title: "Quick obby", prompt: "Build a simple obby with 10 platforms and checkpoints" },
-  { title: "Fix errors", prompt: "Find and fix the errors in the Output window" },
-];
+import type { StudioStatus } from "../useStudioSession";
+import type { Settings } from "../useSettings";
+import type { Message, ToolCall } from "./useChat";
+import { ArrowUpRight, BloxyMark, ChevronDown, Download } from "../landing/icons";
 
 const EASE = "ease-[var(--ease-spring)]";
 
-/** Prompt handed over from the landing page (/studio?prompt=…). */
-function initialPrompt() {
-  try {
-    return new URLSearchParams(window.location.search).get("prompt") ?? "";
-  } catch {
-    return "";
-  }
-}
-
-export default function BloxyApp() {
-  const { sessionId, status, newPairCode } = useStudioSession();
-  const [settings, setSettings] = useSettings();
-  const [messages, setMessages] = useState<Message[]>([]);
-  const [input, setInput] = useState(initialPrompt);
-  const [busy, setBusy] = useState(false);
-  const [showSettings, setShowSettings] = useState(false);
-  const abortRef = useRef<AbortController | null>(null);
-  const scrollRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    // Drop ?prompt from the URL once it's in the composer.
-    if (window.location.search) window.history.replaceState(null, "", "/studio");
-  }, []);
-
-  useEffect(() => {
-    scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
-  }, [messages]);
-
-  const updateLast = (fn: (m: Message) => Message) =>
-    setMessages((ms) => [...ms.slice(0, -1), fn(ms[ms.length - 1])]);
-
-  async function send(text: string) {
-    const content = text.trim();
-    if (!content || busy || !sessionId) return;
-    const history = [...messages, { role: "user" as const, content, tools: [] }];
-    setMessages([...history, { role: "assistant", content: "", tools: [] }]);
-    setInput("");
-    setBusy(true);
-
-    const controller = new AbortController();
-    abortRef.current = controller;
-    try {
-      const res = await fetch("/api/chat", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        signal: controller.signal,
-        body: JSON.stringify({
-          sessionId,
-          provider: settings.provider,
-          model: settings.models[settings.provider],
-          apiKey: settings.apiKeys[settings.provider] || undefined,
-          messages: history.map(({ role, content }) => ({ role, content })),
-        }),
-      });
-      if (!res.ok || !res.body) {
-        const data = (await res.json().catch(() => ({}))) as { error?: string };
-        updateLast((m) => ({ ...m, error: data.error ?? `Request failed (${res.status})` }));
-        if (res.status === 400 && data.error?.includes("API key")) setShowSettings(true);
-        return;
-      }
-      const reader = res.body.pipeThrough(new TextDecoderStream()).getReader();
-      let buffer = "";
-      for (;;) {
-        const { value, done } = await reader.read();
-        if (done) break;
-        buffer += value;
-        const lines = buffer.split("\n");
-        buffer = lines.pop() ?? "";
-        for (const line of lines) if (line.trim()) applyEvent(JSON.parse(line) as AgentEvent);
-      }
-    } catch (err) {
-      if ((err as Error).name !== "AbortError") updateLast((m) => ({ ...m, error: String(err) }));
-    } finally {
-      setBusy(false);
-      abortRef.current = null;
-    }
-  }
-
-  function applyEvent(e: AgentEvent) {
-    switch (e.type) {
-      case "text":
-        updateLast((m) => ({ ...m, content: m.content + e.delta }));
-        break;
-      case "tool_call":
-        updateLast((m) => ({ ...m, tools: [...m.tools, { id: e.id, name: e.name, args: e.args, status: "running" }] }));
-        break;
-      case "tool_result":
-        updateLast((m) => ({
-          ...m,
-          tools: m.tools.map((t) => (t.id === e.id ? { ...t, status: e.ok ? "ok" : "error", preview: e.preview } : t)),
-        }));
-        break;
-      case "error":
-        updateLast((m) => ({ ...m, error: e.message }));
-        break;
-    }
-  }
-
-  const provider = PROVIDERS[settings.provider];
-
-  return (
-    <div className="relative flex h-dvh flex-col overflow-hidden bg-ink text-zinc-100">
-      {/* Ambient glow behind the workspace */}
-      <div className="pointer-events-none absolute top-[-40%] left-1/2 h-[70vh] w-[90vw] -translate-x-1/2 rounded-[100%] bg-[radial-gradient(closest-side,rgba(47,125,255,0.16),transparent)]" />
-
-      <header className="relative z-10 flex items-center justify-between gap-3 px-4 pt-4 pb-3 md:px-6">
-        <Link href="/" className="flex items-center gap-2.5">
-          <BloxyMark className="size-8" />
-          <span className="font-display text-lg font-bold tracking-tight">Bloxy</span>
-          <span className="hidden rounded-full border border-white/10 px-2 py-0.5 text-[10px] tracking-[0.2em] text-white/40 uppercase sm:inline">
-            Studio
-          </span>
-        </Link>
-        <div className="flex items-center gap-2">
-          <ConnectionPill status={status} />
-          <button
-            onClick={() => setShowSettings(true)}
-            className={`flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.04] py-1.5 pr-2 pl-3.5 text-sm backdrop-blur-xl transition-colors duration-500 ${EASE} hover:bg-white/[0.08]`}
-          >
-            <span className="text-white/50">{provider.label}</span>
-            <span className="hidden max-w-[10rem] truncate font-mono text-xs sm:inline">
-              {settings.models[settings.provider]}
-            </span>
-            <span className="grid size-6 place-items-center rounded-full bg-white/[0.06]">
-              <Gear className="size-3.5" />
-            </span>
-          </button>
-        </div>
-      </header>
-
-      <div className="relative flex min-h-0 flex-1">
-        <aside className="hidden w-[340px] shrink-0 overflow-y-auto px-4 pb-4 md:block md:pl-6">
-          <PairPanel status={status} onNewCode={newPairCode} />
-        </aside>
-
-        <main className="flex min-w-0 flex-1 flex-col">
-          <div ref={scrollRef} className="flex-1 overflow-y-auto">
-            <div className="mx-auto max-w-3xl space-y-8 px-4 py-6 md:py-10">
-              <div className="md:hidden">
-                <PairPanel status={status} onNewCode={newPairCode} />
-              </div>
-              {messages.length === 0 && (
-                <div className="pt-6 md:pt-16">
-                  <span className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.03] px-3 py-1 text-[10px] font-medium tracking-[0.2em] text-white/55 uppercase">
-                    <span className={`size-1.5 rounded-full ${status?.connected ? "bg-signal" : "bg-white/30"}`} />
-                    {status?.connected ? "Ready to build" : "Waiting for Studio"}
-                  </span>
-                  <h1 className="mt-5 font-display text-[clamp(2.2rem,5vw,3.75rem)] leading-[0.95] font-extrabold tracking-[-0.04em] uppercase">
-                    What are we
-                    <br />
-                    <span className="text-blox-soft">building</span> today?
-                  </h1>
-                  <div className="mt-10 grid gap-3 sm:grid-cols-2">
-                    {SUGGESTIONS.map((s) => (
-                      <button
-                        key={s.title}
-                        onClick={() => send(s.prompt)}
-                        className={`group rounded-[1.25rem] border border-white/[0.07] bg-white/[0.02] p-1 text-left transition-colors duration-500 ${EASE} hover:border-white/15`}
-                      >
-                        <div className="flex h-full items-start justify-between gap-3 rounded-[calc(1.25rem-0.25rem)] bg-panel p-4 shadow-[inset_0_1px_1px_rgba(255,255,255,0.05)]">
-                          <div>
-                            <p className="font-medium">{s.title}</p>
-                            <p className="mt-1 text-sm leading-snug text-white/45">{s.prompt}</p>
-                          </div>
-                          <ArrowUpRight
-                            className={`size-4 shrink-0 text-white/25 transition-transform duration-500 ${EASE} group-hover:translate-x-0.5 group-hover:-translate-y-0.5 group-hover:text-white/70`}
-                          />
-                        </div>
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              )}
-              {messages.map((m, i) => (
-                <MessageView key={i} message={m} streaming={busy && i === messages.length - 1} />
-              ))}
-            </div>
-          </div>
-
-          <form
-            onSubmit={(e) => {
-              e.preventDefault();
-              void send(input);
-            }}
-            className="px-4 pt-2 pb-4 md:pb-6"
-          >
-            <div className="mx-auto max-w-3xl rounded-[1.6rem] border border-white/10 bg-white/[0.03] p-1.5 shadow-[0_30px_80px_-40px_rgba(47,125,255,0.5)]">
-              <div className="flex items-end gap-2 rounded-[calc(1.6rem-0.375rem)] bg-[#0b0b0e] p-2 shadow-[inset_0_1px_1px_rgba(255,255,255,0.07)]">
-                <textarea
-                  value={input}
-                  onChange={(e) => setInput(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter" && !e.shiftKey) {
-                      e.preventDefault();
-                      void send(input);
-                    }
-                  }}
-                  rows={1}
-                  autoFocus
-                  placeholder={status?.connected ? "Ask Bloxy to build something…" : "Connect Studio first, then ask…"}
-                  className="max-h-48 min-h-11 flex-1 resize-none bg-transparent px-3 py-2.5 text-[15px] outline-none placeholder:text-white/30"
-                />
-                {busy ? (
-                  <button
-                    type="button"
-                    onClick={() => abortRef.current?.abort()}
-                    aria-label="Stop"
-                    className={`grid size-11 place-items-center rounded-full bg-white/10 transition-transform duration-500 ${EASE} hover:bg-white/15 active:scale-95`}
-                  >
-                    <Stop className="size-4" />
-                  </button>
-                ) : (
-                  <button
-                    type="submit"
-                    disabled={!input.trim()}
-                    aria-label="Send"
-                    className={`grid size-11 place-items-center rounded-full bg-blox text-white shadow-[inset_0_1px_1px_rgba(255,255,255,0.3),0_10px_30px_-10px_rgba(47,125,255,0.9)] transition-all duration-500 ${EASE} hover:-translate-y-0.5 active:scale-95 disabled:translate-y-0 disabled:opacity-30 disabled:shadow-none`}
-                  >
-                    <ArrowUp className="size-4" />
-                  </button>
-                )}
-              </div>
-            </div>
-            <p className="mx-auto mt-2 max-w-3xl px-2 text-center text-[11px] text-white/25">
-              Changes happen in your open place. Ctrl+Z in Studio undoes any step.
-            </p>
-          </form>
-        </main>
-      </div>
-
-      {showSettings && (
-        <SettingsDialog settings={settings} onSave={setSettings} onClose={() => setShowSettings(false)} />
-      )}
-    </div>
-  );
-}
-
-function ConnectionPill({ status }: { status: StudioStatus | null }) {
+export function ConnectionPill({ status }: { status: StudioStatus | null }) {
   const on = !!status?.connected;
   return (
     <span
@@ -276,7 +28,7 @@ function ConnectionPill({ status }: { status: StudioStatus | null }) {
   );
 }
 
-function Bezel({ children, tone = "default" }: { children: React.ReactNode; tone?: "default" | "live" }) {
+export function Bezel({ children, tone = "default" }: { children: React.ReactNode; tone?: "default" | "live" }) {
   return (
     <div
       className={`rounded-[1.6rem] border p-1.5 ${
@@ -290,7 +42,15 @@ function Bezel({ children, tone = "default" }: { children: React.ReactNode; tone
   );
 }
 
-function PairPanel({ status, onNewCode }: { status: StudioStatus | null; onNewCode: () => void }) {
+export function PairPanel({
+  status,
+  onNewCode,
+  error,
+}: {
+  status: StudioStatus | null;
+  onNewCode: () => void;
+  error?: string | null;
+}) {
   if (status?.connected) {
     return (
       <Bezel tone="live">
@@ -336,7 +96,11 @@ function PairPanel({ status, onNewCode }: { status: StudioStatus | null; onNewCo
           <Download className="size-3.5" />
         </span>
       </a>
-      {status?.pairCode ? (
+      {error ? (
+        <p className="mt-5 rounded-xl border border-red-400/20 bg-red-500/[0.07] px-3 py-2.5 text-xs leading-relaxed text-red-200">
+          {error}
+        </p>
+      ) : status?.pairCode ? (
         <PairCode code={status.pairCode} />
       ) : (
         <button
@@ -350,7 +114,7 @@ function PairPanel({ status, onNewCode }: { status: StudioStatus | null; onNewCo
   );
 }
 
-function PairCode({ code }: { code: string }) {
+export function PairCode({ code }: { code: string }) {
   const [copied, setCopied] = useState(false);
   return (
     <button
@@ -377,7 +141,7 @@ function PairCode({ code }: { code: string }) {
   );
 }
 
-function MessageView({ message, streaming }: { message: Message; streaming: boolean }) {
+export function MessageView({ message, streaming }: { message: Message; streaming: boolean }) {
   if (message.role === "user") {
     return (
       <div className="flex justify-end">
@@ -440,7 +204,7 @@ const TOOL_LABELS: Record<string, string> = {
   set_selection: "Selected",
 };
 
-function ToolChip({ tool }: { tool: ToolCall }) {
+export function ToolChip({ tool }: { tool: ToolCall }) {
   const [open, setOpen] = useState(false);
   const args = tool.args as Record<string, unknown>;
   const target = (args?.path ?? args?.parent ?? args?.pattern ?? args?.root ?? "") as string;
@@ -479,7 +243,7 @@ function ToolChip({ tool }: { tool: ToolCall }) {
 }
 
 /** Minimal markdown: fenced code blocks, inline code and bold. */
-function RichText({ text }: { text: string }) {
+export function RichText({ text }: { text: string }) {
   const parts = text.split(/```(\w*)\n?([\s\S]*?)(?:```|$)/g);
   const out: React.ReactNode[] = [];
   for (let i = 0; i < parts.length; i += 3) {
@@ -522,7 +286,7 @@ function inline(text: string) {
   });
 }
 
-function SettingsDialog({
+export function SettingsDialog({
   settings,
   onSave,
   onClose,

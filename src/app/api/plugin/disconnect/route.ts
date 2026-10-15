@@ -1,5 +1,9 @@
-import { disconnectPlugin } from "@/lib/bridge";
+import { bridge, bridgeErrorResponse } from "@/lib/bridge";
 
 export async function POST(request: Request) {
-  return Response.json({ ok: disconnectPlugin(request.headers.get("x-bloxy-token")) });
+  try {
+    return Response.json({ ok: await bridge.disconnectPlugin(request.headers.get("x-bloxy-token")) });
+  } catch (err) {
+    return bridgeErrorResponse(err);
+  }
 }
