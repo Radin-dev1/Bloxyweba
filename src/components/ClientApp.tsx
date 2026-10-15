@@ -1,0 +1,13 @@
+"use client";
+
+import dynamic from "next/dynamic";
+
+// The app lives on browser state (localStorage session + keys), so skip server rendering.
+const BloxyApp = dynamic(() => import("./BloxyApp"), {
+  ssr: false,
+  loading: () => <div className="h-dvh bg-zinc-950" />,
+});
+
+export default function ClientApp() {
+  return <BloxyApp />;
+}
