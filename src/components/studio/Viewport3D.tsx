@@ -10,10 +10,12 @@ import type { Scene, ScenePart } from "./useScene";
 
 export type Tool = "select" | "move" | "scale" | "rotate";
 
-// Roblox Studio's selection blue.
+// Roblox Studio's selection blue and default Sky / Atmosphere palette.
 const SELECT_BLUE = "#1aa3ff";
-const SKY_TOP = "#76a9ee";
-const SKY_HORIZON = "#e4eefc";
+const SKY_TOP = "#9ac8db";
+const SKY_MID = "#bbd2db";
+const SKY_HORIZON = "#d6dbdb";
+const ATMOSPHERE_DECAY = "#92a2b0";
 
 // ── Geometry per Roblox shape, built once at unit size and scaled per instance ──
 
@@ -109,16 +111,17 @@ function displayPart(p: ScenePart): ScenePart {
 
 /**
  * Roblox's baseplate Texture (rbxassetid://6372755229, exported from Studio), tiled every
- * 8 studs on the top face at Transparency 0.8, exactly as in a new Studio place.
+ * 8 studs on the top face with Color3 (0, 0, 0) at Transparency 0.8, exactly as in a new Studio place.
  */
 const BASEPLATE_TEXTURE_URL = "/roblox/baseplate.png";
-// In Bloxy every baseplate is drawn in Studio's default grey and stretched far past the
-// camera's reach so nobody sees its edge. Display only: Studio's real part is unchanged,
-// and Explorer/Properties still show its true size and color.
-const BASEPLATE_COLOR = "5b5b5b";
+// In Bloxy every baseplate is drawn in Studio's cool slate-grey (Color 91,91,91 under
+// Studio's Sky + Atmosphere IBL) and stretched far past the camera's reach so nobody sees
+// its edge. Display only: Studio's real part is unchanged, and Explorer/Properties still
+// show its true size and color.
+const BASEPLATE_COLOR = "6b778d";
 const BASEPLATE_DISPLAY_SIZE = 60_000;
-const FOG_NEAR = 1_500;
-const FOG_FAR = 9_000;
+const FOG_NEAR = 90;
+const FOG_FAR = 750;
 const BASEPLATE_STUDS_PER_TILE = 8;
 const BASEPLATE_TEXTURE_TRANSPARENCY = 0.8;
 
@@ -149,11 +152,11 @@ function BaseplateTexture({ part }: { part: ScenePart }) {
   return (
     <mesh matrix={matrix} matrixAutoUpdate={false} receiveShadow raycast={() => null} renderOrder={1}>
       <planeGeometry args={[1, 1]} />
-      <meshStandardMaterial
+      <meshBasicMaterial
+        color="#000000"
         map={texture}
         transparent
         opacity={1 - BASEPLATE_TEXTURE_TRANSPARENCY}
-        roughness={0.6}
         depthWrite={false}
         polygonOffset
         polygonOffsetFactor={-1}
@@ -336,7 +339,7 @@ function RobloxSkybox() {
   return <primitive attach="background" object={cube} />;
 }
 
-/** Fallback sky: a screen-space gradient from Studio blue to a pale horizon. */
+/** Fallback sky: a screen-space gradient from Studio's sky blue to a pale misty horizon. */
 function GradientSky() {
   const texture = useMemo(() => {
     const c = document.createElement("canvas");
@@ -345,8 +348,9 @@ function GradientSky() {
     const ctx = c.getContext("2d")!;
     const g = ctx.createLinearGradient(0, 0, 0, 256);
     g.addColorStop(0, SKY_TOP);
-    g.addColorStop(0.62, SKY_HORIZON);
-    g.addColorStop(1, "#f3f6fb");
+    g.addColorStop(0.16, SKY_MID);
+    g.addColorStop(0.32, SKY_HORIZON);
+    g.addColorStop(1, SKY_HORIZON);
     ctx.fillStyle = g;
     ctx.fillRect(0, 0, 2, 256);
     const t = new THREE.CanvasTexture(c);
@@ -447,12 +451,12 @@ export default function Viewport3D({
       gl={{ antialias: true }}
     >
       <SkyBackground />
-      <fog attach="fog" args={[SKY_HORIZON, FOG_NEAR, FOG_FAR]} />
-      <hemisphereLight args={["#ffffff", "#8a8f99", 1.05]} />
+      <fog attach="fog" args={[ATMOSPHERE_DECAY, FOG_NEAR, FOG_FAR]} />
+      <hemisphereLight args={["#d8e6f8", "#6d788b", 1.15]} />
       <directionalLight
         position={[140, 260, 90]}
-        color="#ffffff"
-        intensity={2.1}
+        color="#f6f9ff"
+        intensity={2.0}
         castShadow
         shadow-bias={-0.0004}
         shadow-normalBias={0.03}

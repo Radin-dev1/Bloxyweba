@@ -19,7 +19,7 @@ export function demoScene(): Scene {
       },
     ],
     truncated: false,
-    camera: { position: [-40, 30, 50], target: [0, 0, 0] },
+    camera: { position: [-18, 22, 58], target: [0, 3, 0] },
     fetchedAt: 0,
   };
 }
