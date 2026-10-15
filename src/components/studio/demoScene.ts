@@ -26,9 +26,10 @@ function yaw(deg: number) {
 
 export function demoScene(): Scene {
   const parts: ScenePart[] = [
-    part("Workspace.Baseplate", "Block", [140, 2, 140], [0, -1, 0], "3a3f4b"),
+    // Exactly what a new Studio place starts with (from a Studio export): 2048x16x2048 at Y=-8, Color (91,91,91).
+    part("Workspace.Baseplate", "Block", [2048, 16, 2048], [0, -8, 0], "5b5b5b"),
     part("Workspace.Lava", "Block", [70, 1, 40], [24, 0.6, 0], "ff5a1f", "Neon"),
-    part("Workspace.SpawnLocation", "Block", [12, 1, 12], [-22, 0.5, 0], "2f7dff"),
+    part("Workspace.SpawnLocation", "Block", [12, 1, 12], [-22, 0.5, 0], "a3a2a5"),
   ];
   const colors = ["5c9bff", "7fb0ff", "a78bfa", "34e0a1", "fbbf24", "f472b6"];
   for (let i = 0; i < 10; i++) {

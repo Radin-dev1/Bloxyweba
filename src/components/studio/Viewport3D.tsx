@@ -1,8 +1,8 @@
 "use client";
 
 import { Canvas, useThree, type ThreeEvent } from "@react-three/fiber";
-import { Edges, GizmoHelper, GizmoViewcube, Grid, OrbitControls, TransformControls } from "@react-three/drei";
-import { useEffect, useLayoutEffect, useMemo, useRef } from "react";
+import { Edges, GizmoHelper, GizmoViewcube, OrbitControls, TransformControls, useCubeTexture, useTexture } from "@react-three/drei";
+import { Suspense, useEffect, useLayoutEffect, useMemo, useRef } from "react";
 import * as THREE from "three";
 import type { OrbitControls as OrbitControlsImpl } from "three-stdlib";
 import type { PartEdit } from "./sceneMath";
@@ -79,54 +79,71 @@ function matrixFor(p: ScenePart, out: THREE.Matrix4) {
 }
 
 /**
- * Standard material with Studio's look: a faint world-aligned grid every 4 studs on
- * every surface, like the default baseplate texture, so scale reads at a glance.
+ * Roblox plastic: plain, slightly glossy, no surface grid (modern Studio parts are smooth).
+ * The baseplate's grid comes from its own Texture, drawn by <BaseplateTexture>.
  */
-function studioMaterial(transparent: boolean) {
-  const m = new THREE.MeshStandardMaterial({
-    roughness: 0.78,
-    metalness: 0.02,
+function plasticMaterial(transparent: boolean) {
+  return new THREE.MeshStandardMaterial({
+    roughness: 0.6,
+    metalness: 0,
     transparent,
     opacity: transparent ? 0.45 : 1,
     depthWrite: !transparent,
   });
-  m.onBeforeCompile = (shader) => {
-    shader.vertexShader = shader.vertexShader
-      .replace("#include <common>", "#include <common>\nvarying vec3 vGridPos;\nvarying vec3 vGridNormal;")
-      .replace(
-        "#include <project_vertex>",
-        `#include <project_vertex>
-        #ifdef USE_INSTANCING
-          mat4 gridModel = modelMatrix * instanceMatrix;
-        #else
-          mat4 gridModel = modelMatrix;
-        #endif
-        vGridPos = (gridModel * vec4(transformed, 1.0)).xyz;
-        vGridNormal = normalize(mat3(gridModel) * objectNormal);`,
-      );
-    shader.fragmentShader = shader.fragmentShader
-      .replace(
-        "#include <common>",
-        `#include <common>
-        varying vec3 vGridPos;
-        varying vec3 vGridNormal;
-        float bloxyLine(float c) {
-          float g = c / 4.0;
-          float w = max(fwidth(g), 1e-4);
-          return 1.0 - smoothstep(0.0, w * 1.25, abs(fract(g - 0.5) - 0.5));
-        }`,
-      )
-      .replace(
-        "#include <color_fragment>",
-        `#include <color_fragment>
-        vec3 an = abs(vGridNormal);
-        vec2 gp = (an.x > an.y && an.x > an.z) ? vGridPos.yz : ((an.y > an.z) ? vGridPos.xz : vGridPos.xy);
-        float gl = max(bloxyLine(gp.x), bloxyLine(gp.y));
-        diffuseColor.rgb *= 1.0 - 0.14 * gl;`,
-      );
-  };
-  m.customProgramCacheKey = () => `bloxy-grid-${transparent}`;
-  return m;
+}
+
+/** Studio's default Baseplate is a Block named "Baseplate" with the grid Texture on top. */
+export function isBaseplate(p: ScenePart) {
+  return p.shape === "Block" && /(^|\.)Baseplate$/.test(p.path);
+}
+
+/**
+ * Roblox's baseplate Texture (rbxassetid://6372755229, exported from Studio), tiled every
+ * 8 studs on the top face at Transparency 0.8, exactly as in a new Studio place.
+ */
+const BASEPLATE_TEXTURE_URL = "/roblox/baseplate.png";
+const BASEPLATE_STUDS_PER_TILE = 8;
+const BASEPLATE_TEXTURE_TRANSPARENCY = 0.8;
+
+function BaseplateTexture({ part }: { part: ScenePart }) {
+  const base = useTexture(BASEPLATE_TEXTURE_URL);
+  const gl = useThree((s) => s.gl);
+  const texture = useMemo(() => {
+    const t = base.clone();
+    t.wrapS = t.wrapT = THREE.RepeatWrapping;
+    t.colorSpace = THREE.SRGBColorSpace;
+    t.anisotropy = gl.capabilities.getMaxAnisotropy();
+    t.repeat.set(part.size[0] / BASEPLATE_STUDS_PER_TILE, part.size[2] / BASEPLATE_STUDS_PER_TILE);
+    t.needsUpdate = true;
+    return t;
+  }, [base, gl, part.size]);
+  useEffect(() => () => texture.dispose(), [texture]);
+
+  // Unit plane on the part's top face, transformed by the part's CFrame and size.
+  const matrix = useMemo(() => {
+    const [x, y, z, r00, r01, r02, r10, r11, r12, r20, r21, r22] = part.cframe;
+    const m = new THREE.Matrix4().set(r00, r01, r02, x, r10, r11, r12, y, r20, r21, r22, z, 0, 0, 0, 1);
+    return m
+      .multiply(new THREE.Matrix4().makeScale(part.size[0], part.size[1], part.size[2]))
+      .multiply(new THREE.Matrix4().makeTranslation(0, 0.5, 0))
+      .multiply(new THREE.Matrix4().makeRotationX(-Math.PI / 2));
+  }, [part]);
+
+  return (
+    <mesh matrix={matrix} matrixAutoUpdate={false} receiveShadow raycast={() => null} renderOrder={1}>
+      <planeGeometry args={[1, 1]} />
+      <meshStandardMaterial
+        map={texture}
+        transparent
+        opacity={1 - BASEPLATE_TEXTURE_TRANSPARENCY}
+        roughness={0.6}
+        depthWrite={false}
+        polygonOffset
+        polygonOffsetFactor={-1}
+        polygonOffsetUnits={-1}
+      />
+    </mesh>
+  );
 }
 
 type Group = { key: string; shape: string; neon: boolean; transparent: boolean; indices: number[] };
@@ -156,7 +173,7 @@ function PartGroup({ group, parts, onPick }: { group: Group; parts: ScenePart[];
             transparent: group.transparent,
             opacity: group.transparent ? 0.6 : 1,
           })
-        : studioMaterial(group.transparent),
+        : plasticMaterial(group.transparent),
     [group.neon, group.transparent],
   );
   const invalidate = useThree((s) => s.invalidate);
@@ -283,8 +300,27 @@ function SelectionGizmo({
   );
 }
 
-/** Roblox's default sky: a screen-space gradient from blue to a pale horizon. */
-function SkyBackground() {
+/**
+ * Roblox Sky faces (Sky.SkyboxRt/Lf/Up/Dn/Bk/Ft), saved as public/roblox/sky/<face>.png.
+ * Set to true once the six images are in place; until then a gradient stands in.
+ * three.js cube order is +X, -X, +Y, -Y, +Z, -Z; Roblox's "front" faces -Z.
+ */
+const HAS_SKYBOX = false;
+const SKYBOX_FACES = ["rt.png", "lf.png", "up.png", "dn.png", "bk.png", "ft.png"];
+
+function RobloxSkybox() {
+  const loaded = useCubeTexture(SKYBOX_FACES, { path: "/roblox/sky/" });
+  const cube = useMemo(() => {
+    const c = loaded.clone();
+    c.colorSpace = THREE.SRGBColorSpace;
+    c.needsUpdate = true;
+    return c;
+  }, [loaded]);
+  return <primitive attach="background" object={cube} />;
+}
+
+/** Fallback sky: a screen-space gradient from Studio blue to a pale horizon. */
+function GradientSky() {
   const texture = useMemo(() => {
     const c = document.createElement("canvas");
     c.width = 2;
@@ -302,6 +338,15 @@ function SkyBackground() {
   }, []);
   useEffect(() => () => texture.dispose(), [texture]);
   return <primitive attach="background" object={texture} />;
+}
+
+function SkyBackground() {
+  if (!HAS_SKYBOX) return <GradientSky />;
+  return (
+    <Suspense fallback={<GradientSky />}>
+      <RobloxSkybox />
+    </Suspense>
+  );
 }
 
 /**
@@ -324,7 +369,8 @@ function CameraRig({ scene, fitKey }: { scene: Scene | null; fitKey: number }) {
 
     const box = new THREE.Box3();
     const v = new THREE.Vector3();
-    for (const p of scene.parts) {
+    const framed = scene.parts.filter((p) => Math.max(...p.size) < 512);
+    for (const p of framed.length ? framed : scene.parts) {
       const half = Math.max(...p.size) / 2;
       v.set(p.cframe[0], p.cframe[1], p.cframe[2]);
       box.expandByPoint(v.clone().addScalar(half));
@@ -367,11 +413,7 @@ export default function Viewport3D({
 }) {
   const parts = useMemo(() => scene?.parts ?? [], [scene]);
   const groups = useMemo(() => groupParts(parts), [parts]);
-  const floorY = useMemo(() => {
-    let min = Infinity;
-    for (const p of parts) min = Math.min(min, p.cframe[1] - p.size[1] / 2);
-    return Number.isFinite(min) ? min - 0.02 : 0;
-  }, [parts]);
+  const baseplates = useMemo(() => parts.filter(isBaseplate), [parts]);
   const selectedPart = selected !== null ? parts[selected] : undefined;
 
   return (
@@ -387,12 +429,11 @@ export default function Viewport3D({
       gl={{ antialias: true }}
     >
       <SkyBackground />
-      <fog attach="fog" args={[SKY_HORIZON, 700, 2800]} />
-      <hemisphereLight args={["#ffffff", "#9aa6b8", 1.15]} />
+      <hemisphereLight args={["#ffffff", "#8a8f99", 1.05]} />
       <directionalLight
         position={[140, 260, 90]}
-        color="#fff3df"
-        intensity={2.3}
+        color="#ffffff"
+        intensity={2.1}
         castShadow
         shadow-bias={-0.0004}
         shadow-normalBias={0.03}
@@ -408,6 +449,11 @@ export default function Viewport3D({
       {groups.map((g) => (
         <PartGroup key={`${scene?.fetchedAt}-${g.key}`} group={g} parts={parts} onPick={(i) => onSelect(i)} />
       ))}
+      <Suspense fallback={null}>
+        {baseplates.map((p) => (
+          <BaseplateTexture key={p.path} part={p} />
+        ))}
+      </Suspense>
       {selected !== null && selectedPart && (
         <SelectionGizmo
           key={selected}
@@ -417,21 +463,6 @@ export default function Viewport3D({
           onCommit={(edit) => onEdit(selected, edit)}
         />
       )}
-
-      <Grid
-        position={[0, floorY, 0]}
-        args={[10, 10]}
-        cellSize={4}
-        cellThickness={0.7}
-        cellColor="#aab6c8"
-        sectionSize={32}
-        sectionThickness={1.1}
-        sectionColor="#8193b0"
-        fadeDistance={1100}
-        fadeStrength={1.4}
-        infiniteGrid
-        followCamera={false}
-      />
 
       <OrbitControls makeDefault enableDamping={false} maxPolarAngle={Math.PI * 0.495} />
       <CameraRig scene={scene} fitKey={fitKey} />
