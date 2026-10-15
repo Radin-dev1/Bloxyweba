@@ -23,7 +23,8 @@ Browser (chat UI) ──POST /api/chat──▶ Next.js server ──▶ Claude 
 | `src/lib/tools.ts` | Tool definitions (zod), shared by every provider, plus the system prompt |
 | `src/lib/agent/` | Agent loops for Claude (`claude.ts`) and Gemini (`gemini.ts`) |
 | `src/app/api/` | Route handlers for sessions, the plugin and chat |
-| `src/components/` | Chat UI, pairing panel and settings dialog |
+| `src/app/page.tsx`, `src/components/landing/` | Landing page (hero prompt hands off to `/studio?prompt=…`) |
+| `src/components/` | Studio chat UI, pairing panel and settings dialog |
 
 ## Run it locally
 
@@ -32,7 +33,7 @@ npm install
 npm run dev
 ```
 
-Open http://localhost:3000, then:
+Open http://localhost:3000 for the landing page. The app itself lives at http://localhost:3000/studio:
 
 1. Click **Download the plugin** and save `Bloxy.server.lua` into Studio's Plugins folder (Studio: *Plugins → Plugins Folder*, or `%LOCALAPPDATA%\Roblox\Plugins`). Restart Studio.
 2. In Studio, open *Plugins → Bloxy*. Enter the website URL (`http://localhost:3000`) and the pair code, then press **Connect**. Allow the HTTP permission prompt.

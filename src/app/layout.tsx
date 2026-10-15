@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
+import { Bricolage_Grotesque, Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -12,16 +12,23 @@ const geistMono = Geist_Mono({
   subsets: ["latin"],
 });
 
+const display = Bricolage_Grotesque({
+  variable: "--font-display",
+  subsets: ["latin"],
+  weight: ["500", "700", "800"],
+});
+
 export const metadata: Metadata = {
-  title: "Bloxy",
-  description: "AI that builds inside your Roblox Studio place",
+  title: "Bloxy — AI that builds inside Roblox Studio",
+  description:
+    "Describe what you want and Bloxy builds it in your open Roblox Studio place: scripts, parts, UI and systems. Bring your own Claude or Gemini key.",
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
     <html
       lang="en"
-      className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
+      className={`${geistSans.variable} ${geistMono.variable} ${display.variable} h-full antialiased`}
     >
       <body className="min-h-full flex flex-col">{children}</body>
     </html>
