@@ -1,6 +1,5 @@
-import { spawn } from "child_process";
 import { existsSync, readdirSync } from "fs";
-import { mkdtemp, readFile, rm, writeFile } from "fs/promises";
+import { mkdtemp, rm, writeFile } from "fs/promises";
 import os from "os";
 import path from "path";
 
@@ -10,24 +9,30 @@ import path from "path";
  * Blender by itself; in production it must be opted into with BLENDER_PATH.
  */
 
-const WINDOWS_ROOT = "C:\\Program Files\\Blender Foundation";
+// Install locations are only known at runtime. They are deliberately built so the bundler can't
+// see them as literal paths: Turbopack otherwise tries to trace (and pack) the Blender folder.
+const UNIX_CANDIDATES: string[] = JSON.parse(
+  '["/Applications/Blender.app/Contents/MacOS/Blender","/usr/bin/blender","/usr/local/bin/blender","/snap/bin/blender"]',
+);
 
 export function findBlender(): string | null {
   const fromEnv = process.env.BLENDER_PATH || process.env.BLENDER;
   if (fromEnv && existsSync(fromEnv)) return fromEnv;
-  if (process.platform === "win32" && existsSync(WINDOWS_ROOT)) {
-    // Newest installed version first ("Blender 5.2" > "Blender 4.4").
-    const versions = readdirSync(WINDOWS_ROOT)
-      .filter((d) => d.startsWith("Blender"))
-      .sort((a, b) => b.localeCompare(a, undefined, { numeric: true }));
-    for (const v of versions) {
-      const exe = path.join(WINDOWS_ROOT, v, "blender.exe");
-      if (existsSync(exe)) return exe;
+  const programFiles = process.platform === "win32" ? process.env.ProgramW6432 || process.env.ProgramFiles : undefined;
+  if (programFiles) {
+    const root = [programFiles, "Blender Foundation"].join(path.sep);
+    if (existsSync(root)) {
+      // Newest installed version first ("Blender 5.2" > "Blender 4.4").
+      const versions = readdirSync(root)
+        .filter((d) => d.startsWith("Blender"))
+        .sort((a, b) => b.localeCompare(a, undefined, { numeric: true }));
+      for (const v of versions) {
+        const exe = [root, v, "blender.exe"].join(path.sep);
+        if (existsSync(exe)) return exe;
+      }
     }
   }
-  for (const p of ["/Applications/Blender.app/Contents/MacOS/Blender", "/usr/bin/blender", "/usr/local/bin/blender", "/snap/bin/blender"]) {
-    if (existsSync(p)) return p;
-  }
+  for (const p of UNIX_CANDIDATES) if (existsSync(p)) return p;
   return null;
 }
 
@@ -86,6 +91,10 @@ async function runNow(
   const unsafe = checkScript(script);
   if (unsafe) return { ok: false, error: unsafe };
 
+  // Loaded at runtime so the bundler doesn't trace these runtime paths (it would otherwise
+  // pack the whole project into this server function).
+  const { spawn } = await import(/* turbopackIgnore: true */ "child_process");
+  const { readFile } = await import(/* turbopackIgnore: true */ "fs/promises");
   const dir = await mkdtemp(path.join(os.tmpdir(), "bloxy-blender-"));
   const files = {
     script: path.join(dir, "model.py"),
