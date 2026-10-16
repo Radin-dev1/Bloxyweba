@@ -13,6 +13,8 @@ import { ConnectionPill, MessageView, PairPanel, SettingsDialog } from "./parts"
 import Properties from "./Properties";
 import type { BuildT } from "@/lib/openrouter";
 import { buildToParts } from "./nodes/ModelPreview";
+import { streamModel3d, type Model3DHandlers } from "./model3dStream";
+import { useLiveBuild } from "./useLiveBuild";
 import { applyEdit, toStudioProperties, type PartEdit } from "./sceneMath";
 import { useChat } from "./useChat";
 import AccountPill from "./AccountPill";
@@ -20,7 +22,7 @@ import ModelPicker from "./ModelPicker";
 import { FREE_DEFAULT, withFreeOnly } from "./freeModels";
 import { useAccount } from "./useAccount";
 import { useScene, type Scene } from "./useScene";
-import { DEFAULT_VIEWPORT_OPTIONS, type Tool, type ViewportOptions } from "./Viewport3D";
+import { DEFAULT_VIEWPORT_OPTIONS, isBaseplate, type Tool, type ViewportFocus, type ViewportOptions } from "./Viewport3D";
 import WorkspaceDock, { type DockPanel } from "./dock/WorkspaceDock";
 import CreateWheel, { type Primitive } from "./dock/CreateWheel";
 import ShortcutsHelp from "./dock/ShortcutsHelp";
@@ -93,6 +95,8 @@ export default function StudioApp() {
   const [workspacePanel, setWorkspacePanel] = useState<WorkspacePanel>(null);
   const [viewportOptions, setViewportOptions] = useState<ViewportOptions>(DEFAULT_VIEWPORT_OPTIONS);
   const [dockPanel, setDockPanel] = useState<DockPanel>(null);
+  const [forgeOpened, setForgeOpened] = useState(false);
+  if (dockPanel === "forge" && !forgeOpened) setForgeOpened(true); // adjust state during render (React docs pattern)
   const [environment, setEnvironmentState] = useState<Environment>(DEFAULT_ENVIRONMENT);
   useEffect(() => {
     const t = setTimeout(() => setEnvironmentState(loadEnvironment()), 0); // browser-only setting
@@ -125,7 +129,7 @@ export default function StudioApp() {
     onTurnEnd,
     onNeedsKey: () => setShowSettings(true),
     // Offline, the agent builds into the local workspace (insertBuild is declared below; this runs later).
-    onBuild: (build) => void insertBuild(build).catch(() => {}),
+    onBuild: (build) => void playIntoWorkspace(build),
   });
 
   // Before Studio connects, a demo place you can click around and edit locally.
@@ -133,6 +137,19 @@ export default function StudioApp() {
   useEffect(() => saveLocalPlace(demo), [demo]);
   const scene = connected ? sceneApi.scene : demo;
   const parts = useMemo(() => scene?.parts ?? [], [scene]);
+  // A model being generated shows up in the workspace part by part, on top of the real scene.
+  const liveBuild = useLiveBuild();
+  const [focus, setFocus] = useState<ViewportFocus | undefined>();
+  const focusOn = (origin: [number, number, number]) =>
+    setFocus((f) => ({ key: (f?.key ?? 0) + 1, center: [origin[0], 6, origin[2]], radius: 28 }));
+  const liveParts = useMemo(
+    () => (liveBuild.live ? buildToParts({ name: liveBuild.live.name, parts: liveBuild.live.parts }, liveBuild.live.origin) : []),
+    [liveBuild.live],
+  );
+  const viewScene = useMemo(
+    () => (scene && liveParts.length ? { ...scene, parts: [...scene.parts, ...liveParts] } : scene),
+    [scene, liveParts],
+  );
 
   // Selection is kept by path, so it survives refreshes after edits.
   const [selectedPath, setSelectedPath] = useState<string | null>(null);
@@ -196,9 +213,29 @@ export default function StudioApp() {
   }, []);
 
   /** Puts a generated build into Studio (as a Model) or, offline, into the local place. */
-  const insertBuild = async (build: BuildT): Promise<string> => {
+  /** Where the next model goes: beside everything already built, so models never pile up. */
+  const origins = useRef(new Map<string, [number, number, number]>());
+  const nextOrigin = (): [number, number, number] => {
+    let maxX = -Infinity;
+    for (const p of parts) {
+      if (isBaseplate(p)) continue;
+      maxX = Math.max(maxX, p.cframe[0] + Math.max(...p.size) / 2);
+    }
+    return maxX === -Infinity ? [0, 0, 0] : [Math.ceil(maxX + 20), 0, 0];
+  };
+  const uniqueName = (name: string) => {
+    const taken = (n: string) => parts.some((p) => p.path.startsWith(`Workspace.${n}.`));
+    if (!taken(name)) return name;
+    let i = 2;
+    while (taken(`${name}${i}`)) i++;
+    return `${name}${i}`;
+  };
+
+  const insertBuild = async (build: BuildT, origin?: [number, number, number]): Promise<string> => {
     if (!connected) {
-      const added = buildToParts(build);
+      const at = origin ?? origins.current.get(build.name) ?? [0, 0, 0];
+      origins.current.set(build.name, at);
+      const added = buildToParts(build, at);
       setDemo((d) => ({
         ...d,
         parts: [...d.parts.filter((p) => !p.path.startsWith(`Workspace.${build.name}.`)), ...added],
@@ -214,6 +251,59 @@ export default function StudioApp() {
     if (!res.ok || !data.result?.path) throw new Error(data.error ?? `Insert failed (${res.status})`);
     void sceneApi.refresh();
     return data.result.path;
+  };
+
+  /**
+   * Generates a 3D model and builds it live in the workspace while the AI writes it; with
+   * autoAdd the finished model is then added to the workspace (or Studio, when connected).
+   */
+  const generate3D = async (
+    body: Record<string, unknown>,
+    handlers: Model3DHandlers = {},
+    options: { autoAdd?: boolean } = {},
+  ) => {
+    const origin = nextOrigin();
+    liveBuild.begin(origin);
+    focusOn(origin);
+    try {
+      const r = await streamModel3d(body, {
+        onStatus: (t) => {
+          liveBuild.status(t);
+          handlers.onStatus?.(t);
+        },
+        onName: (n) => {
+          liveBuild.rename(n);
+          handlers.onName?.(n);
+        },
+        onPart: (p) => {
+          liveBuild.part(p);
+          handlers.onPart?.(p);
+        },
+      });
+      let path: string | undefined;
+      if (options.autoAdd) {
+        const build = { ...r.build, name: uniqueName(r.build.name) };
+        path = await insertBuild(build, origin);
+        r.build = build;
+      }
+      void refreshAccount();
+      return { ...r, path };
+    } finally {
+      liveBuild.end();
+    }
+  };
+
+  /** Plays a finished build (e.g. from the chat agent) into the workspace part by part. */
+  const playIntoWorkspace = async (build: BuildT) => {
+    const origin = origins.current.get(build.name) ?? nextOrigin();
+    focusOn(origin);
+    try {
+      if (await liveBuild.play(build, origin)) await insertBuild(build, origin);
+    } catch {
+      // keep chatting even if the place couldn't take it
+    } finally {
+      liveBuild.end();
+    }
   };
 
   /** Adds one Roblox primitive, spread out so repeated adds don't stack. */
@@ -289,7 +379,8 @@ export default function StudioApp() {
       >
         {tab === "workspace" ? (
           <Viewport3D
-            scene={scene}
+            scene={viewScene}
+            focus={focus}
             selected={selected}
             onSelect={onSelect}
             fitKey={fitKey}
@@ -302,6 +393,7 @@ export default function StudioApp() {
         ) : (
           <div className="h-full bg-ink">
             <NodeEditor
+              generate3D={generate3D}
               send={chat.send}
               stop={chat.stop}
               busy={chat.busy}
@@ -400,6 +492,17 @@ export default function StudioApp() {
             </aside>
           )}
 
+          {liveBuild.live && (
+            <div className="pointer-events-none absolute top-[4.6rem] left-1/2 z-30 flex -translate-x-1/2 items-center gap-3 rounded-2xl border border-blox/30 bg-[#0f1218]/90 py-2.5 pr-4 pl-3 shadow-[0_18px_50px_-20px_rgba(47,125,255,0.6)] backdrop-blur-xl">
+              <span className="size-5 animate-spin rounded-full border-2 border-blox/30 border-t-blox" />
+              <div className="min-w-0">
+                <p className="truncate text-[13px] font-semibold text-white">Building {liveBuild.live.name}</p>
+                <p className="truncate text-[11px] text-white/50">
+                  {liveBuild.live.parts.length} {liveBuild.live.parts.length === 1 ? "part" : "parts"} · {liveBuild.live.status}
+                </p>
+              </div>
+            </div>
+          )}
           {toast && (
             <div className="absolute top-[8.5rem] left-1/2 z-30 max-w-md -translate-x-1/2 rounded-2xl border border-red-400/25 bg-[#1a1215]/95 px-4 py-2.5 text-sm text-red-200 shadow-xl backdrop-blur-xl">
               {toast}
@@ -412,8 +515,11 @@ export default function StudioApp() {
       {tab === "workspace" && (
         <>
           <WorkspaceDock open={dockPanel} onOpen={setDockPanel} />
-          {dockPanel === "forge" && (
+          {/* Stays mounted once opened (just hidden), so ideas and builds in progress survive closing it. */}
+          {forgeOpened && (
+            <div className={dockPanel === "forge" ? "contents" : "hidden"}>
             <IdeaForge
+              generate3D={generate3D}
               openrouterKey={settings.openrouterKey}
               model3d={settings.freeOnly ? FREE_DEFAULT : undefined}
               connected={connected}
@@ -422,6 +528,7 @@ export default function StudioApp() {
               onNeedsKey={() => setShowSettings(true)}
               onClose={() => setDockPanel(null)}
             />
+            </div>
           )}
           {dockPanel === "avatar" && (
             <AvatarWorkbench

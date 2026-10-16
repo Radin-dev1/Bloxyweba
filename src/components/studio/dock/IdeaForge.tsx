@@ -15,9 +15,12 @@ const RANDOM: { key: keyof typeof IDEAS; label: string }[] = [
   { key: "item", label: "Random Item" },
 ];
 
+import type { Generate3D } from "../model3dStream";
+
 type Idea = { id: string; prompt: string; image: string; build?: BuildT; inserted?: string };
 
 export default function IdeaForge({
+  generate3D,
   openrouterKey,
   model3d,
   connected,
@@ -26,6 +29,8 @@ export default function IdeaForge({
   onNeedsKey,
   onClose,
 }: {
+  /** Streams the model and builds it live in the workspace (adds it there when done). */
+  generate3D?: Generate3D;
   openrouterKey: string;
   /** Model for "Make 3D" (free-only mode passes a free one); default is the server's. */
   model3d?: string;
@@ -48,6 +53,8 @@ export default function IdeaForge({
   const [current, setCurrent] = useState<Idea | null>(null);
   const [view, setView] = useState<"image" | "3d">("image");
   const [busy, setBusy] = useState<"image" | "3d" | "insert" | null>(null);
+  /** The model while it's being generated, growing part by part. */
+  const [building, setBuilding] = useState<BuildT | null>(null);
   const [error, setError] = useState<Error | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
 
@@ -98,19 +105,36 @@ export default function IdeaForge({
     if (!current || busy) return;
     setError(null);
     setBusy("3d");
+    const body = {
+      apiKey: openrouterKey,
+      prompt: current.prompt === "Uploaded reference" ? "the object in the image" : current.prompt,
+      image: current.image,
+      codeFormat: "roblox",
+      ...(model3d ? { model: model3d } : {}),
+    };
     try {
-      const r = await postGen<{ build: BuildT }>("/api/gen/model3d", {
-        apiKey: openrouterKey,
-        prompt: current.prompt === "Uploaded reference" ? "the object in the image" : current.prompt,
-        image: current.image,
-        codeFormat: "roblox",
-        ...(model3d ? { model: model3d } : {}),
-      });
-      update({ ...current, build: r.build, inserted: undefined });
-      setView("3d");
+      if (generate3D) {
+        // Watch it being built here and in the workspace; it's added to the workspace when done.
+        setView("3d");
+        setBuilding({ name: "Building", parts: [] });
+        const r = await generate3D(
+          body,
+          {
+            onName: (name) => setBuilding((b) => (b ? { ...b, name } : b)),
+            onPart: (part) => setBuilding((b) => (b ? { ...b, parts: [...b.parts, part] } : b)),
+          },
+          { autoAdd: true },
+        );
+        update({ ...current, build: r.build, inserted: r.path });
+      } else {
+        const r = await postGen<{ build: BuildT }>("/api/gen/model3d", body);
+        update({ ...current, build: r.build, inserted: undefined });
+        setView("3d");
+      }
     } catch (err) {
       fail(err);
     } finally {
+      setBuilding(null);
       setBusy(null);
       onSpent();
     }
@@ -207,7 +231,15 @@ export default function IdeaForge({
 
           <div className="flex flex-col items-center gap-3">
             <div className="relative aspect-square w-full overflow-hidden rounded-2xl bg-white">
-              {busy === "image" || busy === "3d" ? (
+              {busy === "3d" && building && building.parts.length > 0 ? (
+                <div className="relative h-full">
+                  <ModelPreview build={building} />
+                  <div className="absolute top-3 left-3 flex items-center gap-2 rounded-full bg-black/60 px-3 py-1.5 text-xs text-white backdrop-blur">
+                    <span className="size-3 animate-spin rounded-full border-2 border-white/30 border-t-white" />
+                    Building {building.name} · {building.parts.length} {building.parts.length === 1 ? "part" : "parts"}
+                  </div>
+                </div>
+              ) : busy === "image" || busy === "3d" ? (
                 <div className="grid h-full place-items-center bg-[#eef2f8]">
                   <div className="text-center">
                     <span className="mx-auto block size-8 animate-spin rounded-full border-2 border-blox/30 border-t-blox" />
@@ -272,7 +304,14 @@ export default function IdeaForge({
                 </a>
               )}
             </div>
-            {current?.inserted && <p className="text-xs text-signal">Added as {current.inserted}</p>}
+            {current?.inserted && (
+              <p className="flex items-center gap-2 text-xs text-blox-soft">
+                {connected ? "Inserted into Studio" : "Added to your workspace"} as {current.inserted}
+                <button type="button" onClick={onClose} className="rounded-full bg-blox px-2.5 py-1 font-medium text-white">
+                  See it in the workspace
+                </button>
+              </p>
+            )}
           </div>
         </div>
 

@@ -17,6 +17,7 @@ import "@xyflow/react/dist/style.css";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { GEN_DEFAULTS, type BuildT } from "@/lib/openrouter";
 import type { TurnResult } from "./useChat";
+import type { Generate3D } from "./model3dStream";
 import AddNodeMenu from "./nodes/AddNodeMenu";
 import { KindIcon } from "./nodes/icons";
 import { ActionsContext, nodeTypes, type NodeActions } from "./nodes/nodeViews";
@@ -32,6 +33,8 @@ type Props = {
   busy: boolean;
   connected: boolean;
   openrouterKey: string;
+  /** Streams a 3D model and builds it live in the workspace (offline it's added there when done). */
+  generate3D?: Generate3D;
   /** Inserts a generated build into Studio (or the demo place); resolves to its path. */
   onInsertBuild: (build: BuildT) => Promise<string>;
   onNeedsKey: () => void;
@@ -257,7 +260,7 @@ function ToolButton({
   );
 }
 
-function Editor({ send, stop, busy, connected, openrouterKey, onInsertBuild, onNeedsKey, onBackToWorkspace }: Props) {
+function Editor({ send, stop, busy, connected, openrouterKey, generate3D, onInsertBuild, onNeedsKey, onBackToWorkspace }: Props) {
   const initial = useMemo(() => loadSaved(), []);
   const [nodes, setNodes, onNodesChange] = useNodesState<FlowNode>(initial.nodes);
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>(initial.edges);
@@ -465,14 +468,36 @@ function Editor({ send, stop, busy, connected, openrouterKey, onInsertBuild, onN
         case "model3d": {
           const prompt = promptOf(node.data.prompt);
           if (!prompt) throw new Error("Describe the object or connect a Text node.");
-          const r = await post<{ build: BuildT }>("/api/gen/model3d", {
+          const body = {
             apiKey: openrouterKey,
             model: node.data.model,
             prompt,
             image: images[0],
             codeFormat: node.data.codeFormat ?? "blender",
-          });
-          patch(id, { build: r.build, inserted: undefined });
+          };
+          if (generate3D) {
+            // The node's preview grows part by part; offline the model also lands in the workspace.
+            let partial: BuildT = { name: "Building", parts: [] };
+            patch(id, { build: undefined, inserted: undefined, phase: "Building…" });
+            const r = await generate3D(
+              body,
+              {
+                onName: (name) => (partial = { ...partial, name }),
+                onPart: (part) => {
+                  partial = { ...partial, parts: [...partial.parts, part] };
+                  patch(id, { build: partial, phase: `${partial.parts.length} parts` });
+                },
+              },
+              { autoAdd: !connected },
+            ).catch((err: Error & { status?: number }) => {
+              if (err.status === 400 && err.message.includes("OpenRouter")) onNeedsKey();
+              throw err;
+            });
+            patch(id, { build: r.build, inserted: r.path, phase: undefined });
+          } else {
+            const r = await post<{ build: BuildT }>("/api/gen/model3d", body);
+            patch(id, { build: r.build, inserted: undefined });
+          }
           break;
         }
         case "studio":

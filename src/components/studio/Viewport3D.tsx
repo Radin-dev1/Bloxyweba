@@ -546,6 +546,41 @@ function SkyBackground({ sky = "studio" }: { sky?: Environment["sky"] }) {
  * Frames the camera on the scene: Studio's own camera on first load, the bounding box
  * when the user asks to re-frame (fitKey > 0). Refreshes after edits keep the view.
  */
+/** A spot the camera should swing to (e.g. where a model is being generated); key changes trigger it. */
+export type ViewportFocus = { key: number; center: [number, number, number]; radius: number };
+
+/** Glides the camera to look at `focus`, keeping the current viewing angle. */
+function FocusRig({ focus }: { focus?: ViewportFocus }) {
+  const get = useThree((s) => s.get);
+  useEffect(() => {
+    if (!focus) return;
+    const { camera, controls, invalidate } = get();
+    const orbit = controls as OrbitControlsImpl | null;
+    if (!orbit) return;
+    const target = new THREE.Vector3(...focus.center);
+    const dir = camera.position.clone().sub(orbit.target).normalize();
+    const goal = target.clone().add(dir.multiplyScalar(Math.max(focus.radius * 2.2, 24)));
+    const fromPos = camera.position.clone();
+    const fromTarget = orbit.target.clone();
+    const start = performance.now();
+    let frame = 0;
+    const step = () => {
+      const t = Math.min(1, (performance.now() - start) / 700);
+      const e = 1 - Math.pow(1 - t, 3);
+      camera.position.lerpVectors(fromPos, goal, e);
+      orbit.target.lerpVectors(fromTarget, target, e);
+      orbit.update();
+      invalidate();
+      if (t < 1) frame = requestAnimationFrame(step);
+    };
+    frame = requestAnimationFrame(step);
+    return () => cancelAnimationFrame(frame);
+    // Only a new focus key moves the camera.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [focus?.key, get]);
+  return null;
+}
+
 function CameraRig({ scene, fitKey }: { scene: Scene | null; fitKey: number }) {
   // three.js objects are mutable by design; read them from the store inside the effect.
   const get = useThree((s) => s.get);
@@ -592,6 +627,7 @@ export default function Viewport3D({
   selected,
   onSelect,
   fitKey,
+  focus,
   tool,
   editable,
   options = DEFAULT_VIEWPORT_OPTIONS,
@@ -602,6 +638,8 @@ export default function Viewport3D({
   selected: number | null;
   onSelect: (index: number | null) => void;
   fitKey: number;
+  /** Swing the camera here when its key changes. */
+  focus?: ViewportFocus;
   tool: Tool;
   editable: boolean;
   options?: ViewportOptions;
@@ -685,6 +723,7 @@ export default function Viewport3D({
 
       <OrbitControls makeDefault enableDamping={false} maxPolarAngle={Math.PI * 0.495} />
       <CameraRig scene={scene} fitKey={fitKey} />
+      <FocusRig focus={focus} />
 
       {options.showViewcube && (
         <GizmoHelper alignment="bottom-right" margin={[78, 126]}>
