@@ -186,8 +186,86 @@ export default function StudioApp() {
   const onSelect = (i: number | null) => {
     const path = i !== null ? (parts[i]?.path ?? null) : null;
     setSelectedPath(path);
+    setSelectedMesh(null);
     if (connected) void sceneApi.select(path);
   };
+  const [selectedMesh, setSelectedMesh] = useState<string | null>(null);
+
+  // ── Deleting objects ──
+  // Offline, deletes can be undone here (Ctrl+Z); with Studio connected it's Studio's own undo.
+  type Removed = { kind: "parts"; label: string; parts: ScenePart[] } | { kind: "mesh"; label: string; mesh: WorkspaceMesh; glb: ArrayBuffer };
+  const undoStack = useRef<Removed[]>([]);
+
+  /** Deletes a part, or a model and everything in it, by path. */
+  const deletePath = async (path: string) => {
+    const label = path.split(".").pop() ?? path;
+    const meshName = path.startsWith("Workspace.") ? path.slice("Workspace.".length) : "";
+    const mesh = !connected ? meshModels.find((m) => m.name === meshName) : undefined;
+    if (mesh) return deleteMesh(mesh.name);
+    setSelectedPath(null);
+    if (!connected) {
+      const removed = demo.parts.filter((p) => p.path === path || p.path.startsWith(`${path}.`));
+      if (!removed.length) return;
+      undoStack.current = [...undoStack.current.slice(-19), { kind: "parts", label, parts: removed }];
+      setDemo((d) => ({ ...d, parts: d.parts.filter((p) => !(p.path === path || p.path.startsWith(`${path}.`))) }));
+      flash(`Deleted ${label}. Press Ctrl+Z to undo.`);
+      return;
+    }
+    const res = await fetch("/api/studio", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ sessionId, tool: "delete_instance", args: { path } }),
+    }).catch(() => null);
+    const data = (await res?.json().catch(() => ({}))) as { error?: string } | undefined;
+    if (!res?.ok) flash(data?.error ?? "Studio couldn't delete that.");
+    else flash(`Deleted ${label} in Studio. Undo there with Ctrl+Z.`);
+    void sceneApi.refresh();
+  };
+
+  const deleteMesh = async (name: string) => {
+    const mesh = meshModels.find((m) => m.name === name);
+    if (!mesh) return;
+    const glb = await fetch(mesh.url).then((r) => r.arrayBuffer()).catch(() => null);
+    if (glb) undoStack.current = [...undoStack.current.slice(-19), { kind: "mesh", label: name, mesh, glb }];
+    setSelectedMesh(null);
+    setMeshModels((all) => all.filter((m) => m.name !== name));
+    void meshStore.remove(name);
+    flash(`Deleted ${name}. Press Ctrl+Z to undo.`);
+  };
+
+  const undoDelete = () => {
+    const last = undoStack.current.pop();
+    if (!last) return false;
+    if (last.kind === "parts") setDemo((d) => ({ ...d, parts: [...d.parts, ...last.parts] }));
+    else {
+      setMeshModels((all) => [...all.filter((m) => m.name !== last.mesh.name), last.mesh]);
+      void meshStore.put({ name: last.mesh.name, glb: new Uint8Array(last.glb), origin: last.mesh.origin, dims: last.mesh.dims, tris: last.mesh.tris });
+    }
+    flash(`Restored ${last.label}.`);
+    return true;
+  };
+
+  /** The model a part belongs to (its parent path), if it isn't directly in Workspace. */
+  const parentModel = (path: string) => {
+    const cut = path.lastIndexOf(".");
+    const parent = cut > 0 ? path.slice(0, cut) : "";
+    return parent && parent !== "Workspace" ? parent : null;
+  };
+
+  // Delete/Backspace deletes the selection; Ctrl+Z undoes an offline delete.
+  const keyActions = useRef<{ del: () => boolean; undo: () => boolean }>({ del: () => false, undo: () => false });
+  useEffect(() => {
+    keyActions.current = {
+      del: () => {
+        if (tab !== "workspace") return false;
+        if (selectedMesh) void deleteMesh(selectedMesh);
+        else if (selectedPart && !isBaseplate(selectedPart)) void deletePath(selectedPart.path);
+        else return false;
+        return true;
+      },
+      undo: () => (tab === "workspace" && !connected ? undoDelete() : false),
+    };
+  });
 
   const onEdit = async (index: number, edit: PartEdit) => {
     const part = parts[index];
@@ -208,13 +286,15 @@ export default function StudioApp() {
   // Studio shortcuts: Ctrl+1..4 for Select/Move/Scale/Rotate, Esc to deselect.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      const t = e.target as HTMLElement;
-      if (t.closest("input, textarea, select, [contenteditable]")) return;
+      const t = e.target as HTMLElement | null;
+      if (t?.closest?.("input, textarea, select, [contenteditable]")) return;
       if ((e.ctrlKey || e.metaKey) && ["1", "2", "3", "4"].includes(e.key)) {
         e.preventDefault();
         setTool((["select", "move", "scale", "rotate"] as const)[Number(e.key) - 1]);
       }
       if (e.key === "Escape") setSelectedPath(null);
+      if ((e.key === "Delete" || e.key === "Backspace") && keyActions.current.del()) e.preventDefault();
+      if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key.toLowerCase() === "z" && keyActions.current.undo()) e.preventDefault();
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -412,6 +492,11 @@ export default function StudioApp() {
           <Viewport3D
             scene={viewScene}
             meshes={connected ? [] : meshModels}
+            selectedMesh={selectedMesh}
+            onSelectMesh={(name) => {
+              setSelectedPath(null);
+              setSelectedMesh(name);
+            }}
             focus={focus}
             selected={selected}
             onSelect={onSelect}
@@ -522,7 +607,7 @@ export default function StudioApp() {
                 <button type="button" aria-label="Close panel" onClick={() => setWorkspacePanel(null)} className="grid size-8 place-items-center rounded-lg text-white/45 transition-colors hover:bg-white/[0.08] hover:text-white focus-visible:ring-2 focus-visible:ring-blox-soft">×</button>
               </div>
               {workspacePanel === "environment" && <EnvironmentPanel env={environment} onChange={setEnvironment} />}
-              {workspacePanel === "explorer" && <Explorer parts={parts} selected={selected} onSelect={onSelect} />}
+              {workspacePanel === "explorer" && <Explorer parts={parts} selected={selected} onSelect={onSelect} onDelete={(path) => void deletePath(path)} />}
               {workspacePanel === "properties" && (selectedPart && selected !== null ? <Properties part={selectedPart} editable={editable} onEdit={(edit) => void onEdit(selected, edit)} onAsk={() => setInput((v) => `${v ? v.trimEnd() + " " : ""}\`${selectedPart.path}\` `)} /> : <div className="grid flex-1 place-items-center px-7 text-center"><div><span className="mx-auto grid size-11 place-items-center rounded-2xl border border-white/10 bg-white/[0.04] text-white/45"><RailIcon>{RAIL_ITEMS[1].icon}</RailIcon></span><p className="mt-3 text-sm font-medium text-white/80">Nothing selected</p><p className="mt-1 text-xs leading-relaxed text-white/40">Pick a part in the viewport or Explorer to inspect and edit its properties.</p><button type="button" onClick={() => setWorkspacePanel("explorer")} className="mt-4 rounded-lg border border-white/10 bg-white/[0.05] px-3 py-1.5 text-xs text-white/75 transition hover:bg-white/10">Open Explorer</button></div></div>)}
               {workspacePanel === "connect" && (connected ? <div className="flex-1 overflow-y-auto p-4"><PlaceCard placeName={status?.studioInfo?.placeName ?? "Your place"} count={sceneApi.scene?.parts.length ?? 0} truncated={!!sceneApi.scene?.truncated} loading={sceneApi.loading} error={sceneApi.error} outdated={outdated} onNewCode={newPairCode} /></div> : <div className="flex-1 overflow-y-auto p-3"><PairPanel status={status} onNewCode={newPairCode} error={sessionError} /></div>)}
               {workspacePanel === "view" && <div className="min-h-0 flex-1 overflow-y-auto p-3"><p className="px-2 pb-2 text-[10px] font-semibold tracking-[0.16em] text-white/35 uppercase">Viewport</p><div className="space-y-1"><OptionToggle label="Baseplate grid" description="Show the repeating Studio tile texture" checked={viewportOptions.showGrid} onChange={(checked) => setViewportOptions((o) => ({ ...o, showGrid: checked }))} /><OptionToggle label="View cube" description="Show the orientation helper" checked={viewportOptions.showViewcube} onChange={(checked) => setViewportOptions((o) => ({ ...o, showViewcube: checked }))} /><OptionToggle label="Grid snap" description="Move by 1 stud and scale by 0.1" checked={viewportOptions.gridSnap} onChange={(checked) => setViewportOptions((o) => ({ ...o, gridSnap: checked }))} /><OptionToggle label="Angle snap" description="Rotate in 15° increments" checked={viewportOptions.angleSnap} onChange={(checked) => setViewportOptions((o) => ({ ...o, angleSnap: checked }))} /></div>
@@ -533,6 +618,31 @@ export default function StudioApp() {
             </aside>
           )}
 
+          {(selectedPart || selectedMesh) && !liveBuild.live && (
+            <div className="absolute top-[4.6rem] left-1/2 z-30 flex -translate-x-1/2 items-center gap-1 rounded-2xl border border-white/10 bg-[#0f1218]/90 p-1 pl-3 shadow-[0_18px_50px_-24px_rgba(0,0,0,0.9)] backdrop-blur-xl">
+              <span className="max-w-[180px] truncate text-[12px] font-medium text-white/85">
+                {selectedMesh ?? selectedPart?.path.split(".").pop()}
+              </span>
+              {selectedMesh ? (
+                <button type="button" onClick={() => void deleteMesh(selectedMesh)} className="ml-1 flex items-center gap-1.5 rounded-xl px-2.5 py-1.5 text-[12px] text-red-300 hover:bg-red-500/15">
+                  Delete <kbd className="rounded border border-white/15 px-1 font-mono text-[9px] text-white/40">Del</kbd>
+                </button>
+              ) : selectedPart && !isBaseplate(selectedPart) ? (
+                <>
+                  <button type="button" onClick={() => void deletePath(selectedPart.path)} className="ml-1 flex items-center gap-1.5 rounded-xl px-2.5 py-1.5 text-[12px] text-red-300 hover:bg-red-500/15">
+                    Delete part <kbd className="rounded border border-white/15 px-1 font-mono text-[9px] text-white/40">Del</kbd>
+                  </button>
+                  {parentModel(selectedPart.path) && (
+                    <button type="button" onClick={() => void deletePath(parentModel(selectedPart.path)!)} className="rounded-xl px-2.5 py-1.5 text-[12px] text-red-300/80 hover:bg-red-500/15">
+                      Delete {parentModel(selectedPart.path)!.split(".").pop()}
+                    </button>
+                  )}
+                </>
+              ) : (
+                <span className="px-2 text-[11px] text-white/35">Locked</span>
+              )}
+            </div>
+          )}
           {liveBuild.live && (
             <div className="pointer-events-none absolute top-[4.6rem] left-1/2 z-30 flex -translate-x-1/2 items-center gap-3 rounded-2xl border border-blox/30 bg-[#0f1218]/90 py-2.5 pr-4 pl-3 shadow-[0_18px_50px_-20px_rgba(47,125,255,0.6)] backdrop-blur-xl">
               <span className="size-5 animate-spin rounded-full border-2 border-blox/30 border-t-blox" />

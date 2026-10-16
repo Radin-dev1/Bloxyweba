@@ -33,6 +33,7 @@ const Row = memo(function Row({
   expanded,
   toggle,
   onSelect,
+  onDelete,
 }: {
   node: TreeNode;
   depth: number;
@@ -41,6 +42,7 @@ const Row = memo(function Row({
   expanded: Set<string>;
   toggle: (path: string) => void;
   onSelect: (index: number | null) => void;
+  onDelete?: (path: string) => void;
 }) {
   const open = expanded.has(node.path);
   const selected = selectedPath === node.path;
@@ -71,7 +73,24 @@ const Row = memo(function Row({
         <Icon node={node} parts={parts} />
         <span className="truncate">{node.name}</span>
         {hasKids && !open && (
-          <span className="ml-auto font-mono text-[10px] text-white/25">{node.children.length}</span>
+          <span className="ml-auto font-mono text-[10px] text-white/25 group-hover:hidden">{node.children.length}</span>
+        )}
+        {onDelete && node.path !== "Workspace" && (
+          <button
+            type="button"
+            tabIndex={-1}
+            aria-label={`Delete ${node.name}`}
+            title={`Delete ${node.name}${hasKids ? " and everything in it" : ""}`}
+            onClick={(e) => {
+              e.stopPropagation();
+              onDelete(node.path);
+            }}
+            className="ml-auto hidden size-5 shrink-0 place-items-center rounded text-white/40 group-hover:grid hover:bg-red-500/20 hover:text-red-300"
+          >
+            <svg viewBox="0 0 24 24" className="size-3.5" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round">
+              <path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13" />
+            </svg>
+          </button>
         )}
       </div>
       {open &&
@@ -85,6 +104,7 @@ const Row = memo(function Row({
             expanded={expanded}
             toggle={toggle}
             onSelect={onSelect}
+            onDelete={onDelete}
           />
         ))}
     </>
@@ -96,10 +116,13 @@ export default function Explorer({
   parts,
   selected,
   onSelect,
+  onDelete,
 }: {
   parts: ScenePart[];
   selected: number | null;
   onSelect: (index: number | null) => void;
+  /** Deletes a part or a whole model (by path). */
+  onDelete?: (path: string) => void;
 }) {
   const tree = useMemo(() => buildTree(parts), [parts]);
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set(["Workspace"]));
@@ -175,6 +198,7 @@ export default function Explorer({
                 expanded={expanded}
                 toggle={toggle}
                 onSelect={onSelect}
+                onDelete={onDelete}
               />
             ))}
         {q && matches.length === 0 && <p className="px-3 py-2 text-xs text-white/35">No parts match.</p>}

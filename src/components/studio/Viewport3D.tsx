@@ -526,7 +526,17 @@ function PhotoSky({ url }: { url: string }) {
 }
 
 /** A real mesh (GLB from Blender) standing in the workspace. */
-function GltfMesh({ url, position }: { url: string; position: [number, number, number] }) {
+function GltfMesh({
+  url,
+  position,
+  selected,
+  onPick,
+}: {
+  url: string;
+  position: [number, number, number];
+  selected: boolean;
+  onPick: () => void;
+}) {
   const { scene } = useGLTF(url);
   const object = useMemo(() => {
     const o = scene.clone(true);
@@ -539,7 +549,33 @@ function GltfMesh({ url, position }: { url: string; position: [number, number, n
     });
     return o;
   }, [scene]);
-  return <primitive object={object} position={position} />;
+  // World bounds: an invisible click target over the whole model (thin legs are hard to hit)
+  // and the Studio-style selection box.
+  const bounds = useMemo(() => {
+    object.position.set(...position);
+    object.updateMatrixWorld(true);
+    return new THREE.Box3().setFromObject(object);
+  }, [object, position]);
+  const helper = useMemo(() => (selected ? new THREE.Box3Helper(bounds, new THREE.Color(SELECT_BLUE)) : null), [selected, bounds]);
+  const center = bounds.getCenter(new THREE.Vector3());
+  const size = bounds.getSize(new THREE.Vector3());
+  return (
+    <>
+      <primitive object={object} position={position} />
+      <mesh
+        position={center}
+        onClick={(e: ThreeEvent<MouseEvent>) => {
+          e.stopPropagation();
+          if (Date.now() - lastGizmoUse < 400) return;
+          onPick();
+        }}
+      >
+        <boxGeometry args={[size.x, size.y, size.z]} />
+        <meshBasicMaterial transparent opacity={0} depthWrite={false} />
+      </mesh>
+      {helper && <primitive object={helper} />}
+    </>
+  );
 }
 
 function SkyBackground({ sky = "studio" }: { sky?: Environment["sky"] }) {
@@ -650,6 +686,8 @@ export default function Viewport3D({
   options = DEFAULT_VIEWPORT_OPTIONS,
   environment = DEFAULT_ENVIRONMENT,
   meshes = [],
+  selectedMesh = null,
+  onSelectMesh,
   onEdit,
 }: {
   scene: Scene | null;
@@ -664,6 +702,8 @@ export default function Viewport3D({
   environment?: Environment;
   /** Real meshes (GLBs) placed in the workspace, e.g. from Blender. */
   meshes?: { name: string; url: string; origin: [number, number, number] }[];
+  selectedMesh?: string | null;
+  onSelectMesh?: (name: string) => void;
   onEdit: (index: number, edit: PartEdit) => void;
 }) {
   const skyInfo = SKY_PRESETS[environment.sky];
@@ -746,7 +786,13 @@ export default function Viewport3D({
       <FocusRig focus={focus} />
       <Suspense fallback={null}>
         {meshes.map((m) => (
-          <GltfMesh key={m.url} url={m.url} position={m.origin} />
+          <GltfMesh
+            key={m.url}
+            url={m.url}
+            position={m.origin}
+            selected={selectedMesh === m.name}
+            onPick={() => onSelectMesh?.(m.name)}
+          />
         ))}
       </Suspense>
 

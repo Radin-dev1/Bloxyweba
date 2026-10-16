@@ -6,7 +6,7 @@ export const maxDuration = 60;
 
 // Tools the website itself may call without going through the AI: reads, selection,
 // the Properties panel / transform gizmo edits the user makes by hand, and inserting a
-// generated model from the node editor. All edits are undoable in Studio.
+// generated model from the node editor, and deleting Workspace objects. All edits are undoable in Studio.
 const Body = z.discriminatedUnion("tool", [
   z.object({
     sessionId: z.string().min(1),
@@ -27,6 +27,11 @@ const Body = z.discriminatedUnion("tool", [
     sessionId: z.string().min(1),
     tool: z.literal("insert_parts"),
     args: Build.extend({ at: z.tuple([z.number(), z.number(), z.number()]).optional() }),
+  }),
+  z.object({
+    sessionId: z.string().min(1),
+    tool: z.literal("delete_instance"),
+    args: z.object({ path: z.string().min(1).refine((p) => p.startsWith("Workspace."), "Only Workspace objects can be deleted here") }),
   }),
   z.object({
     sessionId: z.string().min(1),
