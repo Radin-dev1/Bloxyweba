@@ -68,14 +68,15 @@ export function checkScript(script: string): string | null {
 }
 
 export type BlenderResult =
-  | { ok: true; glb: Buffer; preview: Buffer | null; report: Record<string, unknown> }
+  /** sheet: a 2x2 JPEG (front, side, top, three-quarter) when asked for, so an AI can see its model. */
+  | { ok: true; glb: Buffer; preview: Buffer | null; sheet: Buffer | null; report: Record<string, unknown> }
   | { ok: false; error: string };
 
 let queue: Promise<unknown> = Promise.resolve(); // one Blender at a time
 
 export function runBlenderScript(
   script: string,
-  options: { maxTris?: number; targetStuds?: number; timeoutMs?: number; signal?: AbortSignal } = {},
+  options: { maxTris?: number; targetStuds?: number; timeoutMs?: number; signal?: AbortSignal; sheet?: boolean } = {},
 ): Promise<BlenderResult> {
   const job = queue.then(() => runNow(script, options));
   queue = job.catch(() => undefined);
@@ -84,7 +85,7 @@ export function runBlenderScript(
 
 async function runNow(
   script: string,
-  { maxTris = 10000, targetStuds = 0, timeoutMs = 120_000, signal }: { maxTris?: number; targetStuds?: number; timeoutMs?: number; signal?: AbortSignal },
+  { maxTris = 10000, targetStuds = 0, timeoutMs = 120_000, signal, sheet = false }: { maxTris?: number; targetStuds?: number; timeoutMs?: number; signal?: AbortSignal; sheet?: boolean },
 ): Promise<BlenderResult> {
   const status = blenderStatus();
   if (!status.available || !status.exe) return { ok: false, error: status.reason ?? "Blender is not available." };
@@ -101,11 +102,12 @@ async function runNow(
     glb: path.join(dir, "model.glb"),
     png: path.join(dir, "preview.png"),
     report: path.join(dir, "report.json"),
+    sheet: path.join(dir, "sheet.jpg"),
   };
   try {
     await writeFile(files.script, script, "utf8");
     const runner = path.join(process.cwd(), "blender", "bloxy_runner.py");
-    const args = ["--background", "--factory-startup", "--python", runner, "--", files.script, files.glb, files.png, files.report, String(maxTris), String(targetStuds)];
+    const args = ["--background", "--factory-startup", "--python", runner, "--", files.script, files.glb, files.png, files.report, String(maxTris), String(targetStuds), ...(sheet ? [files.sheet] : [])];
     const log = await new Promise<string>((resolve, reject) => {
       const child = spawn(status.exe!, args, { cwd: dir, windowsHide: true, env: { ...process.env, SEED: "0" } });
       let out = "";
@@ -131,7 +133,8 @@ async function runNow(
     if (!report.ok) return { ok: false, error: `The Blender script failed: ${String(report.error).slice(-1500)}` };
     const glb = await readFile(files.glb);
     const preview = await readFile(files.png).catch(() => null);
-    return { ok: true, glb, preview, report };
+    const sheetJpg = sheet ? await readFile(files.sheet).catch(() => null) : null;
+    return { ok: true, glb, preview, sheet: sheetJpg, report };
   } catch (err) {
     return { ok: false, error: err instanceof Error ? err.message : String(err) };
   } finally {

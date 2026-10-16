@@ -233,9 +233,14 @@ export default function ChatPage() {
                         <span>
                           {mesh.name} · sculpted mesh · {mesh.tris.toLocaleString()} triangles
                         </span>
-                        <Link href="/studio" className="text-blox-soft hover:underline">
-                          Open in workspace
-                        </Link>
+                        <span className="flex items-center gap-3">
+                          <a href={mesh.url} download={`${mesh.name}.glb`} title="In Roblox Studio: File > Import 3D" className="hover:text-white">
+                            Download .glb
+                          </a>
+                          <Link href="/studio" className="text-blox-soft hover:underline">
+                            Open in workspace
+                          </Link>
+                        </span>
                       </div>
                     </div>
                   ))}

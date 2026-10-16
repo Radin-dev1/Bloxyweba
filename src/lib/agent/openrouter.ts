@@ -5,8 +5,9 @@ import { MAX_STEPS, type AgentParams } from "./types";
 // OpenRouter speaks the OpenAI chat-completions format, including tool calls.
 
 type ToolCall = { id: string; type: "function"; function: { name: string; arguments: string } };
+type Part = { type: "text"; text: string } | { type: "image_url"; image_url: { url: string } };
 type Msg =
-  | { role: "system" | "user"; content: string }
+  | { role: "system" | "user"; content: string | Part[] }
   | { role: "assistant"; content: string | null; tool_calls?: ToolCall[] }
   | { role: "tool"; tool_call_id: string; content: string };
 
@@ -16,6 +17,16 @@ export async function runOpenRouter({ model, apiKey, history, executeTool, emit,
     function: { name: t.name, description: t.description, parameters: t.parameters },
   }));
   const messages: Msg[] = [{ role: "system", content: run.system ?? SYSTEM_PROMPT }, ...history.map((m) => ({ ...m }))];
+  // Tool renders go to the model as images. Text-only models reject them, so the first such
+  // rejection swaps every image for a note and the step is retried.
+  let images = true;
+  const hasImages = () => messages.some((m) => Array.isArray(m.content));
+  const dropImages = () => {
+    images = false;
+    for (const m of messages)
+      if (Array.isArray(m.content))
+        m.content = m.content.map((p) => (p.type === "text" ? p.text : "(The render was left out: this model can't see images.)")).join("\n");
+  };
 
   for (let step = 0; step < MAX_STEPS; step++) {
     if (signal.aborted) return;
@@ -53,6 +64,12 @@ export async function runOpenRouter({ model, apiKey, history, executeTool, emit,
         if (![429, 502, 503].includes(res.status)) break;
       }
       data = await res!.json().catch(() => ({}));
+      if (!res!.ok && images && hasImages() && [400, 404, 415, 422].includes(res!.status)) {
+        await billing?.afterStep(null, true);
+        dropImages();
+        step--;
+        continue;
+      }
       if (!res!.ok) {
         await billing?.afterStep(null, true);
         const err = new Error(data.error?.message ?? `OpenRouter returned ${res!.status}`) as Error & { status: number };
@@ -82,10 +99,19 @@ export async function runOpenRouter({ model, apiKey, history, executeTool, emit,
         }
         emit({ type: "tool_call", id: call.id, name: call.function.name, args });
         const r = await executeTool(call.id, call.function.name, args, signal);
-        return { id: call.id, content: r.ok ? r.content : `Error: ${r.content}` };
+        return { id: call.id, content: r.ok ? r.content : `Error: ${r.content}`, image: r.image };
       }),
     );
     for (const r of results) messages.push({ role: "tool", tool_call_id: r.id, content: r.content });
+    // Tool messages are text only in this format, so renders follow as one user message.
+    const renders = results.filter((r) => r.image);
+    if (renders.length) {
+      const parts: Part[] = renders.flatMap((r) => [
+        { type: "text" as const, text: `Render for tool call ${r.id}:` },
+        { type: "image_url" as const, image_url: { url: `data:${r.image!.mediaType};base64,${r.image!.data}` } },
+      ]);
+      messages.push({ role: "user", content: images ? parts : "(Renders left out: this model can't see images.)" });
+    }
   }
   emit({ type: "error", message: `Stopped after ${MAX_STEPS} steps. Say "continue" to keep going.` });
 }

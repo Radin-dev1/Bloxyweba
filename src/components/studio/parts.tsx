@@ -255,6 +255,14 @@ const TOOL_LABELS: Record<string, string> = {
   get_output: "Read Output",
   insert_asset: "Inserted asset",
   set_selection: "Selected",
+  build_model: "Built",
+  sculpt_model: "Sculpted",
+};
+
+/** What a running tool is doing, in words (Blender can take a few seconds). */
+const RUNNING_LABELS: Record<string, string> = {
+  build_model: "Building",
+  sculpt_model: "Sculpting in Blender",
 };
 
 export function ToolChip({ tool }: { tool: ToolCall }) {
@@ -264,6 +272,7 @@ export function ToolChip({ tool }: { tool: ToolCall }) {
     args?.parent ??
     args?.pattern ??
     args?.root ??
+    args?.name ??
     "") as string;
   const tone =
     tool.status === "running"
@@ -288,7 +297,7 @@ export function ToolChip({ tool }: { tool: ToolCall }) {
           </span>
         )}
         <span className="font-medium">
-          {TOOL_LABELS[tool.name] ?? tool.name}
+          {(tool.status === "running" && RUNNING_LABELS[tool.name]) || TOOL_LABELS[tool.name] || tool.name}
         </span>
         {target && (
           <span className="truncate font-mono text-white/35">

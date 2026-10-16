@@ -17,8 +17,16 @@ export type AgentEvent =
   | { type: "error"; message: string }
   | { type: "done" };
 
-/** Runs one tool call in Studio and returns the text the model should see. */
-export type ToolExecutor = (callId: string, name: string, input: unknown, signal?: AbortSignal) => Promise<{ ok: boolean; content: string }>;
+/** An image a tool hands back for the model to look at (e.g. renders of a sculpted mesh). */
+export type ToolImage = { mediaType: "image/jpeg" | "image/png"; data: string /* base64 */ };
+
+/** Runs one tool call in Studio and returns the text (and optionally an image) the model should see. */
+export type ToolExecutor = (
+  callId: string,
+  name: string,
+  input: unknown,
+  signal?: AbortSignal,
+) => Promise<{ ok: boolean; content: string; image?: ToolImage }>;
 
 export type AgentParams = {
   model: string;

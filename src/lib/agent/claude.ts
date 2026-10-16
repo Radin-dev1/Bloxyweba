@@ -69,7 +69,18 @@ export async function runClaude({ model, apiKey, history, executeTool, emit, sig
       toolUses.map(async (call): Promise<Anthropic.Beta.BetaToolResultBlockParam> => {
         emit({ type: "tool_call", id: call.id, name: call.name, args: call.input });
         const r = await executeTool(call.id, call.name, call.input, signal);
-        return { type: "tool_result", tool_use_id: call.id, content: r.content, is_error: !r.ok };
+        return {
+          type: "tool_result",
+          tool_use_id: call.id,
+          // Renders (e.g. of a sculpted mesh) go in with the text so Claude can check its work.
+          content: r.image
+            ? [
+                { type: "text", text: r.content },
+                { type: "image", source: { type: "base64", media_type: r.image.mediaType, data: r.image.data } },
+              ]
+            : r.content,
+          is_error: !r.ok,
+        };
       }),
     );
     messages.push({ role: "user", content: results });

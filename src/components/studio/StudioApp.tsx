@@ -636,9 +636,19 @@ export default function StudioApp() {
                 {selectedMesh ?? selectedPart?.path.split(".").pop()}
               </span>
               {selectedMesh ? (
-                <button type="button" onClick={() => void deleteMesh(selectedMesh)} className="ml-1 flex items-center gap-1.5 rounded-xl px-2.5 py-1.5 text-[12px] text-red-300 hover:bg-red-500/15">
-                  Delete <kbd className="rounded border border-white/15 px-1 font-mono text-[9px] text-white/40">Del</kbd>
-                </button>
+                <>
+                  <a
+                    href={meshModels.find((m) => m.name === selectedMesh)?.url}
+                    download={`${selectedMesh}.glb`}
+                    title="Import it in Roblox Studio with File > Import 3D"
+                    className="ml-1 rounded-xl px-2.5 py-1.5 text-[12px] text-white/75 hover:bg-white/10 hover:text-white"
+                  >
+                    Download .glb
+                  </a>
+                  <button type="button" onClick={() => void deleteMesh(selectedMesh)} className="flex items-center gap-1.5 rounded-xl px-2.5 py-1.5 text-[12px] text-red-300 hover:bg-red-500/15">
+                    Delete <kbd className="rounded border border-white/15 px-1 font-mono text-[9px] text-white/40">Del</kbd>
+                  </button>
+                </>
               ) : selectedPart && !isBaseplate(selectedPart) ? (
                 <>
                   <button type="button" onClick={() => void deletePath(selectedPart.path)} className="ml-1 flex items-center gap-1.5 rounded-xl px-2.5 py-1.5 text-[12px] text-red-300 hover:bg-red-500/15">

@@ -91,7 +91,7 @@ export async function POST(request: Request) {
   const mcp = studioConnected ? null : await mcpStudio();
   // Load the skill packs this request needs (modeling, maps, textures...), like skills on demand.
   // Sculpting only when this run can actually sculpt (offline mode with Blender on this machine).
-  const canSculpt = !studioConnected && !mcp && sculptAvailable();
+  const canSculpt = !studioConnected && sculptAvailable();
   const skills = skillBlock(pickSkills(history.at(-1)?.content ?? "").filter((id) => id !== "sculpting" || canSculpt));
   const jobCreated = sessionId ? await bridge.createChatJob(sessionId, jobId).catch(() => false) : false;
   if (!sessionId || !jobCreated) return streamReply(request, { provider, model, apiKey, history, billing, skills, mcp });
@@ -212,7 +212,7 @@ async function agentSetup(
     try {
       return {
         executeTool: makeMcpExecutor(mcp.id, emit),
-        tools: await mcpTools(OFFLINE_TOOLS[0].parameters),
+        tools: [...(await mcpTools(OFFLINE_TOOLS[0].parameters)), ...(sculptAvailable() ? [SCULPT_TOOL] : [])],
         system: MCP_SYSTEM_PROMPT + skills,
       };
     } catch {

@@ -3,6 +3,7 @@ import path from "path";
 import { checkBuild, groundBuild, normalizeShapes } from "./buildCheck";
 import { Build, type BuildT } from "./openrouter";
 import { SYSTEM_PROMPT } from "./tools";
+import { runSculpt } from "./agent/sculpt";
 import type { AgentEvent, AgentToolSpec, ToolExecutor } from "./agent/types";
 
 /**
@@ -130,13 +131,15 @@ class StudioMcp {
   }
 
   /** Open Studio windows connected to the MCP server. */
-  async studios(): Promise<{ id: string; name: string }[]> {
+  /** Open Studios. `named` is false while Studio is on its start page (no place open yet). */
+  async studios(): Promise<{ id: string; name: string; named: boolean }[]> {
     const r = await this.call("list_roblox_studios", {}, 10_000);
     try {
       const data = JSON.parse(r.text) as { studios?: Json[] };
       return (data.studios ?? []).map((s) => ({
         id: String(s.studio_id ?? s.id ?? s.studioId ?? ""),
         name: String(s.name ?? s.place_name ?? s.placeName ?? s.title ?? "Roblox Studio"),
+        named: (s.name ?? s.place_name ?? s.placeName ?? s.title) != null,
       }));
     } catch {
       return [];
@@ -151,8 +154,14 @@ export const studioMcp = (g.__bloxyStudioMcp ??= new StudioMcp());
 export async function mcpStudio(): Promise<{ id: string; name: string } | null> {
   if (!studioMcp.available()) return null;
   try {
-    const list = await studioMcp.studios();
-    return list[0] ?? null;
+    // A Studio on its start page has no place to build in: skip it, so the chat builds (and
+    // sculpts) in the Bloxy workspace instead of failing with "Place is not open".
+    for (const s of await studioMcp.studios()) {
+      if (s.named) return { id: s.id, name: s.name };
+      const state = await studioMcp.call("get_studio_state", { studio_id: s.id }, 8_000).catch(() => null);
+      if (state?.ok && !/place is not open/i.test(state.text)) return { id: s.id, name: s.name };
+    }
+    return null;
   } catch {
     return null;
   }
@@ -231,6 +240,7 @@ Connection: you reach Roblox Studio through Roblox's built-in Studio MCP tools (
 - edit scripts with multi_edit; run any Luau (create instances, bulk edits, read positions) with execute_luau, printing what you need to see
 - build physical things with build_model (it handles anchoring, undo and placement), or execute_luau for anything procedural
 - check errors with get_console_output after changes; use start_stop_play only when a playtest is actually needed
+- sculpt_model (when listed) sculpts a smooth organic mesh in the user's local Blender and puts it in their Bloxy workspace, not in Studio; tell them to use Download .glb there and File > Import 3D in Studio. For organic things straight into Studio, generate_mesh is the direct route.
 - Roblox's own AI generators are available too: generate_mesh, generate_procedural_model, generate_material, generate_texture (slow; use when a real mesh or material is wanted), plus search_asset and insert_asset for Creator Store assets.`;
 
 /** Runs MCP tools against one Studio; build_model becomes execute_luau. */
@@ -239,6 +249,11 @@ export function makeMcpExecutor(studioId: string, emit: (e: AgentEvent) => void)
     let ok = false;
     let content: string;
     try {
+      if (name === "sculpt_model") {
+        const r = await runSculpt(callId, input, emit);
+        emit({ type: "tool_result", id: callId, ok: r.ok, preview: r.content.slice(0, 2000) });
+        return r;
+      }
       if (name === "build_model") {
         const parsed = Build.safeParse(input);
         if (!parsed.success) {
