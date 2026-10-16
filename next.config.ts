@@ -6,6 +6,7 @@ const nextConfig: NextConfig = {
   // The download route reads the plugin source at runtime; make sure it ships with the function.
   outputFileTracingIncludes: {
     "/api/plugin/download": ["./plugin/Bloxy.server.lua"],
+    "/api/gen/model3d": ["./data/3dcode/index.json"],
   },
   turbopack: {
     rules: {

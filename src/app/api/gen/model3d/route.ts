@@ -11,6 +11,7 @@ import {
   extractJson,
   orFetch,
 } from "@/lib/openrouter";
+import { findReferences, referenceBlock } from "@/lib/threeDCode";
 import { BIT_ESTIMATES, outOfBits, refund, reserve, resolveBilling, settle } from "@/lib/bits";
 
 export const maxDuration = 300;
@@ -35,25 +36,12 @@ export async function POST(request: Request) {
   if (billing.charge && !(await reserve(billing.user.id, hold))) return outOfBits();
   let paid = false; // once OpenRouter has answered, the call is paid for even if the reply doesn't parse
   try {
-    let datasetHint = "";
-    if (codeFormat === "blender") {
-      const datasetUrl = new URL("https://datasets-server.huggingface.co/search");
-      for (const [name, value] of Object.entries({ dataset: "YipengGao/3DCode", config: "3DCodeData", split: "train", query: prompt.slice(0, 300), offset: "0", length: "1" })) {
-        datasetUrl.searchParams.set(name, value);
-      }
-      try {
-        const sampleResponse = await fetch(datasetUrl, { signal: AbortSignal.timeout(5000), next: { revalidate: 86_400 } });
-        if (sampleResponse.ok) {
-          const sampleData = (await sampleResponse.json()) as { rows?: { row?: { factory?: string; caption_object?: string; caption_create_3D_object?: string; code_geo?: string } }[] };
-          const sample = sampleData.rows?.[0]?.row;
-          if (sample?.code_geo) {
-            datasetHint = `${THREE_D_CODE_GUIDANCE}\n\nMatched dataset description (${(sample.factory ?? "factory").slice(0, 100)}): ${(sample.caption_create_3D_object ?? sample.caption_object ?? "").slice(0, 500)}\n\nExample geometry code (truncated):\n${sample.code_geo.slice(0, 6000)}`;
-          }
-        }
-      } catch {
-        // Keep model generation available when the optional public dataset is slow or offline.
-      }
-    }
+    // Closest objects from the 3DCode dataset (local index): structure references for both
+    // modes, plus a real geometry script in Blender mode.
+    const refs = await findReferences(prompt, 3);
+    const datasetHint = refs.length
+      ? `${codeFormat === "blender" ? THREE_D_CODE_GUIDANCE + "\n\n" : ""}${referenceBlock(refs, codeFormat === "blender")}`
+      : "";
 
     const ask = codeFormat === "blender"
       ? `Create a high-quality Blender 5.0 Python procedural model for: ${prompt}`
@@ -85,7 +73,7 @@ export async function POST(request: Request) {
     const build = codeFormat === "blender"
       ? Build.parse(proceduralModelToBuild(ProceduralModel.parse(extractJson(text))))
       : Build.parse(extractJson(text));
-    return Response.json({ build, bits });
+    return Response.json({ build, bits, references: refs.map((r) => r.name) });
   } catch (err) {
     if (billing.charge && !paid) await refund(billing.user.id, hold);
     return errorResponse(err);
