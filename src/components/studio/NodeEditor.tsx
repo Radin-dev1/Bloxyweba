@@ -17,6 +17,7 @@ import "@xyflow/react/dist/style.css";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { GEN_DEFAULTS, type BuildT } from "@/lib/openrouter";
 import type { TurnResult } from "./useChat";
+import AddNodeMenu from "./nodes/AddNodeMenu";
 import { KindIcon } from "./nodes/icons";
 import { ActionsContext, nodeTypes, type NodeActions } from "./nodes/nodeViews";
 import { CHECKS, KIND_STYLE, type Edge, type FlowNode, type NodeKind } from "./nodes/types";
@@ -73,9 +74,11 @@ function withData<T extends FlowNode>(n: T, data: Partial<T["data"]>): T {
   return { ...n, data: { ...n.data, ...data } } as T;
 }
 
-const TEMPLATES: { label: string; build: () => { nodes: FlowNode[]; edges: Edge[] } }[] = [
+const TEMPLATES: { label: string; details: string; icon: NodeKind; build: () => { nodes: FlowNode[]; edges: Edge[] } }[] = [
   {
     label: "Prop → Studio",
+    details: "Turn a prompt into a 3D prop, then place it in the connected Studio.",
+    icon: "model3d",
     build: () => {
       const t = withData(newNode("text", { x: 0, y: 40 }, "t1"), {
         text: "A cozy wooden market stall with a striped awning and crates of fruit",
@@ -96,6 +99,8 @@ const TEMPLATES: { label: string; build: () => { nodes: FlowNode[]; edges: Edge[
   },
   {
     label: "Thumbnail → Trailer",
+    details: "Create a visual concept, then spin it into a short trailer.",
+    icon: "video",
     build: () => {
       const t = withData(newNode("text", { x: 0, y: 60 }, "t1"), {
         text: "Roblox game thumbnail: a blocky hero jumping across lava platforms, bright, dramatic lighting",
@@ -113,6 +118,8 @@ const TEMPLATES: { label: string; build: () => { nodes: FlowNode[]; edges: Edge[
   },
   {
     label: "Obby in Studio",
+    details: "Build an obby in steps and ask Bloxy to check the result.",
+    icon: "studio",
     build: () => {
       const a = withData(newNode("studio", { x: 0, y: 0 }, "s1"), {
         title: "Course",
@@ -132,6 +139,64 @@ const TEMPLATES: { label: string; build: () => { nodes: FlowNode[]; edges: Edge[
           { id: "e2", source: "s2", target: "c1" },
         ],
       };
+    },
+  },
+  {
+    label: "Roblox Character",
+    details: "Concept art first, then a blocky 3D character built from it, placed in Studio.",
+    icon: "image",
+    build: () => {
+      const t = withData(newNode("text", { x: 0, y: 60 }, "t1"), {
+        text: "A friendly robot mechanic NPC with a tool belt and goggles, Roblox style",
+      });
+      const i = withData(newNode("image", { x: 340, y: 0 }, "i1"), {
+        prompt: "Full-body front view character concept, plain background, game-ready proportions",
+      });
+      const m = newNode("model3d", { x: 720, y: 0 }, "m1");
+      const s1 = withData(newNode("studio", { x: 1100, y: 20 }, "s1"), {
+        title: "Make it an NPC",
+        prompt: "Put the inserted character near the spawn, anchor it, and add a ProximityPrompt that greets the player.",
+      });
+      return {
+        nodes: [t, i, m, s1],
+        edges: [
+          { id: "e1", source: "t1", target: "i1" },
+          { id: "e2", source: "i1", target: "m1" },
+          { id: "e3", source: "t1", target: "m1" },
+          { id: "e4", source: "m1", target: "s1" },
+        ],
+      };
+    },
+  },
+  {
+    label: "World Asset",
+    details: "From a reference image to a placed environment piece.",
+    icon: "upload",
+    build: () => {
+      const u = newNode("upload", { x: 0, y: 0 }, "u1");
+      const t = withData(newNode("text", { x: 0, y: 260 }, "t1"), { text: "A mossy stone bridge over a small river" });
+      const m = newNode("model3d", { x: 380, y: 60 }, "m1");
+      const c = withData(newNode("check", { x: 760, y: 60 }, "c1"), { preset: "tidy" });
+      return {
+        nodes: [u, t, m, c],
+        edges: [
+          { id: "e1", source: "u1", target: "m1" },
+          { id: "e2", source: "t1", target: "m1" },
+          { id: "e3", source: "m1", target: "c1" },
+        ],
+      };
+    },
+  },
+  {
+    label: "Game Icon",
+    details: "A crisp item icon for your shop or inventory UI.",
+    icon: "text",
+    build: () => {
+      const t = withData(newNode("text", { x: 0, y: 40 }, "t1"), { text: "A legendary golden sword with a ruby hilt" });
+      const i = withData(newNode("image", { x: 340, y: 0 }, "i1"), {
+        prompt: "Game inventory icon, centered, bold outline, soft studio lighting, transparent-looking plain background",
+      });
+      return { nodes: [t, i], edges: [{ id: "e1", source: "t1", target: "i1" }] };
     },
   },
 ];
@@ -207,6 +272,7 @@ function Editor({ send, stop, busy, connected, openrouterKey, onInsertBuild, onN
     }
   });
   const [assistantOpen, setAssistantOpen] = useState(false);
+  const [galleryOpen, setGalleryOpen] = useState(false);
   const [assistantInput, setAssistantInput] = useState("");
   const [assistantReply, setAssistantReply] = useState("");
   const [assistantBusy, setAssistantBusy] = useState(false);
@@ -276,6 +342,7 @@ function Editor({ send, stop, busy, connected, openrouterKey, onInsertBuild, onN
     setNodes(graph.nodes);
     setEdges(graph.edges);
     setMenu("none");
+    setGalleryOpen(false);
     setTimeout(() => fitView({ padding: 0.25, duration: 500, maxZoom: 1 }), 50);
   };
 
@@ -547,12 +614,11 @@ function Editor({ send, stop, busy, connected, openrouterKey, onInsertBuild, onN
                 </div>
               </div>
               <div className="my-6 flex items-center gap-4 text-[11px] text-white/30"><span className="h-px flex-1 bg-white/[0.08]" /><span>or choose a starter</span><span className="h-px flex-1 bg-white/[0.08]" /></div>
-              <div className="grid gap-3 sm:grid-cols-3">
-                {TEMPLATES.map((template, index) => {
-                  const details = ["Turn a prompt into a 3D prop, then place it in the connected Studio.", "Create a visual concept, then spin it into a short trailer.", "Build an obby in steps and ask Bloxy to check the result."];
-                  const icon = ["model3d", "video", "studio"][index] as NodeKind;
-                  return <button key={template.label} type="button" onClick={() => loadTemplate(template)} className="group flex min-h-[124px] flex-col rounded-2xl border border-white/[0.09] bg-[#14161b]/90 p-4 text-left transition-all duration-200 hover:-translate-y-0.5 hover:border-white/20 hover:bg-[#1a1d24] focus-visible:ring-2 focus-visible:ring-blox-soft"><span className="grid size-8 place-items-center rounded-xl border border-white/[0.08] bg-white/[0.045] text-blox-soft transition group-hover:border-blox/30 group-hover:bg-blox/10"><KindIcon kind={icon} className="size-4" /></span><span className="mt-3 text-sm font-semibold text-white/90">{template.label}</span><span className="mt-1 text-[11px] leading-relaxed text-white/45">{details[index]}</span></button>;
-                })}
+              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                {TEMPLATES.slice(0, 3).map((template) => (
+                  <button key={template.label} type="button" onClick={() => loadTemplate(template)} className="group flex min-h-[124px] flex-col rounded-2xl border border-white/[0.09] bg-[#14161b]/90 p-4 text-left transition-all duration-200 hover:-translate-y-0.5 hover:border-white/20 hover:bg-[#1a1d24] focus-visible:ring-2 focus-visible:ring-blox-soft"><span className="grid size-8 place-items-center rounded-xl border border-white/[0.08] bg-white/[0.045] text-blox-soft transition group-hover:border-blox/30 group-hover:bg-blox/10"><KindIcon kind={template.icon} className="size-4" /></span><span className="mt-3 text-sm font-semibold text-white/90">{template.label}</span><span className="mt-1 text-[11px] leading-relaxed text-white/45">{template.details}</span></button>
+                ))}
+                <button type="button" onClick={() => setGalleryOpen(true)} className="group flex min-h-[124px] flex-col rounded-2xl border border-dashed border-white/[0.14] bg-white/[0.02] p-4 text-left transition-all duration-200 hover:-translate-y-0.5 hover:border-blox/40 hover:bg-blox/[0.06] focus-visible:ring-2 focus-visible:ring-blox-soft"><span className="grid size-8 place-items-center rounded-xl border border-white/[0.08] bg-white/[0.045] text-white/70"><KindIcon kind="more" className="size-4" /></span><span className="mt-3 text-sm font-semibold text-white/90">Browse templates</span><span className="mt-1 text-[11px] leading-relaxed text-white/45">{TEMPLATES.length} ready-made workflows for characters, worlds, icons and more.</span></button>
               </div>
               <p className="mt-4 text-center text-[10px] text-white/25">Right-click anywhere on the canvas to add a node at that spot.</p>
             </div>
@@ -579,34 +645,55 @@ function Editor({ send, stop, busy, connected, openrouterKey, onInsertBuild, onN
 
         {contextAt && (
           <div
-            className="absolute z-30 w-52 rounded-2xl border border-white/10 bg-[#141518]/95 p-1.5 shadow-2xl backdrop-blur-xl"
+            className="absolute z-30"
             style={{
-              left: Math.min(contextAt.x, (wrapper.current?.clientWidth ?? 9999) - 216),
-              top: Math.min(contextAt.y, (wrapper.current?.clientHeight ?? 9999) - 340),
+              left: Math.min(contextAt.x, (wrapper.current?.clientWidth ?? 9999) - 264),
+              top: Math.min(contextAt.y, (wrapper.current?.clientHeight ?? 9999) - 420),
             }}
-            onContextMenu={(e) => e.preventDefault()}
           >
-            <p className="px-3 pt-1.5 pb-1 text-[10px] tracking-[0.18em] text-white/35 uppercase">Add node here</p>
-            {(["text", "image", "video", "model3d", "upload", "studio", "check", "note"] as NodeKind[]).map((kind) => (
-              <button
-                key={kind}
-                onClick={() => addNode(kind, contextAt.flow)}
-                className="flex w-full items-center gap-2.5 rounded-xl px-3 py-1.5 text-left text-sm text-white/75 hover:bg-white/[0.07] hover:text-white"
-              >
-                <span style={{ color: KIND_STYLE[kind].color }}>
-                  <KindIcon kind={kind} className="size-4" />
-                </span>
-                {KIND_STYLE[kind].label}
-              </button>
-            ))}
+            <AddNodeMenu title="Add node here" onPick={(kind) => addNode(kind, contextAt.flow)} />
+          </div>
+        )}
+
+        {galleryOpen && (
+          <div className="absolute inset-0 z-40 grid place-items-center bg-black/60 p-4 backdrop-blur-sm" onMouseDown={() => setGalleryOpen(false)}>
+            <div onMouseDown={(e) => e.stopPropagation()} className="max-h-[85%] w-full max-w-3xl overflow-y-auto rounded-[1.4rem] border border-white/10 bg-[#101116]/97 p-5 shadow-2xl">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h2 className="font-display text-lg font-bold text-white">Templates</h2>
+                  <p className="text-xs text-white/45">Start from a workflow, then edit any node. Loading one replaces the canvas.</p>
+                </div>
+                <button type="button" aria-label="Close templates" onClick={() => setGalleryOpen(false)} className="grid size-8 place-items-center rounded-lg text-white/50 hover:bg-white/10 hover:text-white">×</button>
+              </div>
+              <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                {TEMPLATES.map((template) => {
+                  const g = template.build();
+                  return (
+                    <button key={template.label} type="button" onClick={() => loadTemplate(template)} className="group flex flex-col rounded-2xl border border-white/[0.09] bg-[#14161b] p-4 text-left transition hover:-translate-y-0.5 hover:border-blox/40">
+                      <span className="flex items-center gap-1.5">
+                        {g.nodes.map((n, i) => (
+                          <span key={n.id} className="flex items-center gap-1.5">
+                            {i > 0 && <span className="h-px w-2.5 bg-white/20" />}
+                            <span className="grid size-7 place-items-center rounded-lg bg-white/[0.05]" style={{ color: KIND_STYLE[n.type as NodeKind].color }}><KindIcon kind={n.type as NodeKind} className="size-3.5" /></span>
+                          </span>
+                        ))}
+                      </span>
+                      <span className="mt-3 text-sm font-semibold text-white/90">{template.label}</span>
+                      <span className="mt-1 text-[11px] leading-relaxed text-white/45">{template.details}</span>
+                      <span className="mt-2 text-[10px] text-white/30">{g.nodes.length} nodes</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
           </div>
         )}
 
         {/* Bottom toolbar */}
         <div className="absolute bottom-5 left-1/2 z-10 -translate-x-1/2">
         {/* Menus live outside the scrolling bar so overflow doesn't clip them. */}
-        {menu === "add" && <div className="absolute bottom-full left-1/2 mb-3 w-56 -translate-x-1/2 z-20 rounded-2xl border border-white/10 bg-[#141518]/95 p-1.5 shadow-2xl backdrop-blur-xl">{(["text", "image", "video", "model3d", "upload", "studio", "check", "note"] as NodeKind[]).map((kind) => <button key={kind} onClick={() => addNode(kind)} className="flex w-full items-center gap-2.5 rounded-xl px-3 py-2 text-left text-sm text-white/75 hover:bg-white/[0.07] hover:text-white"><span style={{ color: KIND_STYLE[kind].color }}><KindIcon kind={kind} className="size-4" /></span>{KIND_STYLE[kind].label}</button>)}</div>}
-        {menu === "more" && <div className="absolute bottom-full left-1/2 mb-3 w-56 -translate-x-1/2 z-20 rounded-2xl border border-white/10 bg-[#141518]/95 p-1.5 shadow-2xl backdrop-blur-xl"><p className="px-3 pt-1.5 pb-1 text-[10px] tracking-[0.18em] text-white/35 uppercase">Templates</p>{TEMPLATES.map((template) => <button key={template.label} onClick={() => loadTemplate(template)} className="block w-full rounded-xl px-3 py-2 text-left text-sm text-white/75 hover:bg-white/[0.07] hover:text-white">{template.label}</button>)}<div className="my-1 h-px bg-white/10"/><button onClick={() => { setNodes([]); setEdges([]); setMenu("none"); }} className="block w-full rounded-xl px-3 py-2 text-left text-sm text-red-300/80 hover:bg-red-500/10">Clear canvas</button></div>}
+        {menu === "add" && <div className="absolute bottom-full left-1/2 z-20 mb-3 -translate-x-1/2"><AddNodeMenu onPick={(kind) => addNode(kind)} /></div>}
+        {menu === "more" && <div className="absolute bottom-full left-1/2 mb-3 w-56 -translate-x-1/2 z-20 rounded-2xl border border-white/10 bg-[#141518]/95 p-1.5 shadow-2xl backdrop-blur-xl"><p className="px-3 pt-1.5 pb-1 text-[10px] tracking-[0.18em] text-white/35 uppercase">Templates</p>{TEMPLATES.slice(0, 4).map((template) => <button key={template.label} onClick={() => loadTemplate(template)} className="block w-full rounded-xl px-3 py-2 text-left text-sm text-white/75 hover:bg-white/[0.07] hover:text-white">{template.label}</button>)}<button onClick={() => { setGalleryOpen(true); setMenu("none"); }} className="block w-full rounded-xl px-3 py-2 text-left text-sm text-blox-soft hover:bg-white/[0.07]">Browse all templates…</button><div className="my-1 h-px bg-white/10"/><button onClick={() => { setNodes([]); setEdges([]); setMenu("none"); }} className="block w-full rounded-xl px-3 py-2 text-left text-sm text-red-300/80 hover:bg-red-500/10">Clear canvas</button></div>}
         <div className="flex max-w-[calc(100vw-100px)] items-center gap-1 overflow-x-auto rounded-[1.35rem] border border-white/10 bg-[#14161b]/95 p-1.5 shadow-[0_20px_60px_-20px_rgba(0,0,0,0.9)] backdrop-blur-2xl [scrollbar-width:none]">
           <ToolButton active={mode === "select"} title="Select (V)" onClick={() => setMode("select")}><KindIcon kind="select" className="size-[19px]" /></ToolButton>
           <ToolButton active={mode === "hand"} title="Hand / pan (H)" onClick={() => setMode("hand")}><KindIcon kind="hand" className="size-[19px]" /></ToolButton>

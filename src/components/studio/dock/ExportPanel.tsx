@@ -204,7 +204,7 @@ export default function ExportPanel({
   };
 
   return (
-    <div className="absolute bottom-5 left-[4.5rem] z-30 w-[min(340px,calc(100vw-5.5rem))] xl:bottom-[6.75rem] xl:left-3 rounded-[1.25rem] border border-white/10 bg-[#1a1d23]/96 p-4 shadow-[0_30px_80px_-30px_rgba(0,0,0,0.9)] backdrop-blur-xl">
+    <div className="absolute bottom-5 left-[4.5rem] z-30 w-[min(340px,calc(100vw-5.5rem))] xl:bottom-[5.25rem] xl:left-3 rounded-[1.25rem] border border-white/10 bg-[#1a1d23]/96 p-4 shadow-[0_30px_80px_-30px_rgba(0,0,0,0.9)] backdrop-blur-xl">
       <div className="flex items-center gap-2">
         <Glyph d={GLYPHS.download} className="size-4 text-white/70" />
         <h2 className="flex-1 font-display text-base font-bold tracking-tight text-white">Export</h2>

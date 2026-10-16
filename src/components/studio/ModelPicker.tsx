@@ -1,27 +1,13 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { PROVIDERS } from "@/lib/agent/providers";
 import { ChevronDown, Search } from "../landing/icons";
+import ModelBrowser from "./ModelBrowser";
+import { RECOMMENDED, loadTextModels, shortName } from "./models";
+import ProviderLogo, { vendorName, vendorOf } from "./ProviderLogo";
 
 type ModelOption = { id: string; name: string };
 
-// OpenRouter's full text-model list, fetched once per page load (public, no key needed).
-let modelsPromise: Promise<ModelOption[]> | null = null;
-function loadModels() {
-  modelsPromise ??= fetch("/api/gen/models?kind=text")
-    .then((r) => r.json())
-    .then((d: { models?: (ModelOption | string)[] }) =>
-      (d.models ?? []).map((m) => (typeof m === "string" ? { id: m, name: m } : m)),
-    )
-    .catch(() => {
-      modelsPromise = null; // let the next open retry
-      return [];
-    });
-  return modelsPromise;
-}
-
-const RECOMMENDED = PROVIDERS.openrouter.models;
 const MAX_SHOWN = 200;
 
 /**
@@ -33,13 +19,14 @@ export default function ModelPicker({ value, onPick }: { value: string; onPick: 
   const [query, setQuery] = useState("");
   const [models, setModels] = useState<ModelOption[] | null>(null);
   const [active, setActive] = useState(0);
+  const [browsing, setBrowsing] = useState(false);
   const root = useRef<HTMLDivElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (!open) return;
     let alive = true;
-    void loadModels().then((m) => alive && setModels(m));
+    void loadTextModels().then((m) => alive && setModels(m));
     const onDown = (e: MouseEvent) => {
       if (!root.current?.contains(e.target as Node)) setOpen(false);
     };
@@ -83,15 +70,18 @@ export default function ModelPicker({ value, onPick }: { value: string; onPick: 
       data-index={index}
       onMouseEnter={() => setActive(index)}
       onClick={() => pick(m.id)}
-      className={`flex w-full flex-col items-start rounded-lg px-2.5 py-1.5 text-left ${
-        active === index ? "bg-white/[0.08]" : ""
-      }`}
+      className={`flex w-full items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-left ${active === index ? "bg-white/[0.08]" : ""}`}
     >
-      <span className="flex w-full items-center gap-2">
-        <span className="truncate text-[12.5px] text-white/90">{m.name}</span>
-        {m.id === value && <span className="ml-auto shrink-0 text-[10px] text-signal">current</span>}
+      <ProviderLogo model={m.id} className="size-6" />
+      <span className="min-w-0 flex-1">
+        <span className="flex w-full items-center gap-2">
+          <span className="truncate text-[12.5px] text-white/90">{m.name === "Use this model id" ? m.name : shortName(m)}</span>
+          {m.id === value && <span className="ml-auto shrink-0 text-[10px] text-signal">current</span>}
+        </span>
+        <span className="block truncate text-[10.5px] text-white/40">
+          {m.name === "Use this model id" ? m.id : vendorName(vendorOf(m.id))}
+        </span>
       </span>
-      <span className="truncate font-mono text-[10.5px] text-white/40">{m.id}</span>
     </button>
   );
 
@@ -109,6 +99,7 @@ export default function ModelPicker({ value, onPick }: { value: string; onPick: 
         aria-expanded={open}
         className="flex max-w-[260px] items-center gap-1 truncate rounded-full bg-white/[0.05] px-2.5 py-1 font-mono transition-colors hover:bg-white/[0.1] hover:text-white/80"
       >
+        <ProviderLogo model={value} className="size-4" />
         <span className="truncate">{value}</span>
         <ChevronDown className={`size-3 shrink-0 transition-transform ${open ? "rotate-180" : ""}`} />
       </button>
@@ -144,7 +135,21 @@ export default function ModelPicker({ value, onPick }: { value: string; onPick: 
             />
           </div>
 
-          <div ref={listRef} role="listbox" className="mt-1.5 max-h-[320px] overflow-y-auto pr-0.5 [scrollbar-width:thin]">
+          <button
+            type="button"
+            onClick={() => {
+              setOpen(false);
+              setBrowsing(true);
+            }}
+            className="mt-1.5 flex w-full items-center gap-2.5 rounded-lg border border-white/[0.06] bg-white/[0.03] px-2.5 py-2 text-left hover:bg-white/[0.07]"
+          >
+            <span className="grid size-6 place-items-center rounded-md bg-white/[0.08] text-white/70">⋯</span>
+            <span>
+              <span className="block text-[12.5px] text-white/90">More models</span>
+              <span className="block text-[10.5px] text-white/40">Search and compare the full live catalog</span>
+            </span>
+          </button>
+          <div ref={listRef} role="listbox" className="mt-1.5 max-h-[300px] overflow-y-auto pr-0.5 [scrollbar-width:thin]">
             {results.custom.map((m) => row(m, i++))}
             {results.recommended.length > 0 && (
               <p className="px-2.5 pt-1.5 pb-1 text-[10px] tracking-[0.16em] text-white/35 uppercase">
@@ -171,6 +176,7 @@ export default function ModelPicker({ value, onPick }: { value: string; onPick: 
           </p>
         </div>
       )}
+      {browsing && <ModelBrowser value={value} onPick={onPick} onClose={() => setBrowsing(false)} />}
     </div>
   );
 }

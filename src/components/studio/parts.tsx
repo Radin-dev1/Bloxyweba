@@ -5,7 +5,14 @@ import { PROVIDERS } from "@/lib/agent/providers";
 import type { StudioStatus } from "../useStudioSession";
 import type { Settings } from "../useSettings";
 import type { Message, ToolCall } from "./useChat";
-import { ArrowUpRight, BloxyMark, ChevronDown, Download } from "../landing/icons";
+import {
+  ArrowUpRight,
+  BloxyMark,
+  ChevronDown,
+  Download,
+} from "../landing/icons";
+import ModelBrowser from "./ModelBrowser";
+import ProviderLogo from "./ProviderLogo";
 
 const EASE = "ease-[var(--ease-spring)]";
 
@@ -14,25 +21,41 @@ export function ConnectionPill({ status }: { status: StudioStatus | null }) {
   return (
     <span
       className={`flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-medium backdrop-blur-xl ${
-        on ? "border-signal/20 bg-signal/10 text-signal" : "border-white/10 bg-white/[0.04] text-white/45"
+        on
+          ? "border-signal/20 bg-signal/10 text-signal"
+          : "border-white/10 bg-white/[0.04] text-white/45"
       }`}
     >
       <span className="relative flex size-1.5">
-        {on && <span className="animate-pulse-ring absolute inset-0 rounded-full bg-signal" />}
-        <span className={`relative size-1.5 rounded-full ${on ? "bg-signal" : "bg-white/35"}`} />
+        {on && (
+          <span className="animate-pulse-ring absolute inset-0 rounded-full bg-signal" />
+        )}
+        <span
+          className={`relative size-1.5 rounded-full ${on ? "bg-signal" : "bg-white/35"}`}
+        />
       </span>
       <span className="max-w-[9rem] truncate">
-        {on ? status?.studioInfo?.placeName || "Studio connected" : "Studio offline"}
+        {on
+          ? status?.studioInfo?.placeName || "Studio connected"
+          : "Studio offline"}
       </span>
     </span>
   );
 }
 
-export function Bezel({ children, tone = "default" }: { children: React.ReactNode; tone?: "default" | "live" }) {
+export function Bezel({
+  children,
+  tone = "default",
+}: {
+  children: React.ReactNode;
+  tone?: "default" | "live";
+}) {
   return (
     <div
       className={`rounded-[1.6rem] border p-1.5 ${
-        tone === "live" ? "border-signal/20 bg-signal/[0.04]" : "border-white/[0.08] bg-white/[0.025]"
+        tone === "live"
+          ? "border-signal/20 bg-signal/[0.04]"
+          : "border-white/[0.08] bg-white/[0.025]"
       }`}
     >
       <div className="rounded-[calc(1.6rem-0.375rem)] bg-panel p-5 shadow-[inset_0_1px_1px_rgba(255,255,255,0.06)]">
@@ -54,11 +77,15 @@ export function PairPanel({
   if (status?.connected) {
     return (
       <Bezel tone="live">
-        <p className="text-[10px] font-medium tracking-[0.2em] text-signal uppercase">Live</p>
+        <p className="text-[10px] font-medium tracking-[0.2em] text-signal uppercase">
+          Live
+        </p>
         <p className="mt-2 font-display text-xl font-bold tracking-tight">
           {status.studioInfo?.placeName ?? "Your place"}
         </p>
-        <p className="mt-1 text-sm text-white/45">is linked to this tab. Bloxy can read and edit it.</p>
+        <p className="mt-1 text-sm text-white/45">
+          is linked to this tab. Bloxy can read and edit it.
+        </p>
         <button
           onClick={onNewCode}
           className="mt-4 text-xs text-white/40 underline-offset-4 hover:text-white/80 hover:underline"
@@ -71,16 +98,26 @@ export function PairPanel({
   }
   return (
     <Bezel>
-      <p className="text-[10px] font-medium tracking-[0.2em] text-white/40 uppercase">Connect</p>
-      <p className="mt-2 font-display text-xl font-bold tracking-tight">Link Roblox Studio</p>
+      <p className="text-[10px] font-medium tracking-[0.2em] text-white/40 uppercase">
+        Connect
+      </p>
+      <p className="mt-2 font-display text-xl font-bold tracking-tight">
+        Link Roblox Studio
+      </p>
       <ol className="mt-5 space-y-4 text-sm text-white/55">
         {[
           <>
             Put the plugin in Studio&apos;s Plugins folder (
-            <span className="text-white/75">Plugins → Plugins Folder</span>) and restart Studio.
+            <span className="text-white/75">Plugins → Plugins Folder</span>) and
+            restart Studio.
           </>,
-          <>Open the Bloxy button in the Plugins tab. Allow HTTP when Studio asks.</>,
-          <>Enter this site&apos;s URL and the code below, then press Connect.</>,
+          <>
+            Open the Bloxy button in the Plugins tab. Allow HTTP when Studio
+            asks.
+          </>,
+          <>
+            Enter this site&apos;s URL and the code below, then press Connect.
+          </>,
         ].map((step, i) => (
           <li key={i} className="flex gap-3">
             <span className="grid size-6 shrink-0 place-items-center rounded-full border border-white/10 font-mono text-[11px] text-blox-soft">
@@ -141,12 +178,20 @@ export function PairCode({ code }: { code: string }) {
           </span>
         ))}
       </div>
-      <span className="mt-2 block text-center text-[11px] text-white/35">{copied ? "Copied" : "Click to copy"}</span>
+      <span className="mt-2 block text-center text-[11px] text-white/35">
+        {copied ? "Copied" : "Click to copy"}
+      </span>
     </button>
   );
 }
 
-export function MessageView({ message, streaming }: { message: Message; streaming: boolean }) {
+export function MessageView({
+  message,
+  streaming,
+}: {
+  message: Message;
+  streaming: boolean;
+}) {
   if (message.role === "user") {
     return (
       <div className="flex justify-end">
@@ -156,7 +201,8 @@ export function MessageView({ message, streaming }: { message: Message; streamin
       </div>
     );
   }
-  const empty = !message.content && message.tools.length === 0 && !message.error;
+  const empty =
+    !message.content && message.tools.length === 0 && !message.error;
   return (
     <div className="flex gap-3">
       <BloxyMark className="mt-0.5 size-7 shrink-0" />
@@ -212,7 +258,11 @@ const TOOL_LABELS: Record<string, string> = {
 export function ToolChip({ tool }: { tool: ToolCall }) {
   const [open, setOpen] = useState(false);
   const args = tool.args as Record<string, unknown>;
-  const target = (args?.path ?? args?.parent ?? args?.pattern ?? args?.root ?? "") as string;
+  const target = (args?.path ??
+    args?.parent ??
+    args?.pattern ??
+    args?.root ??
+    "") as string;
   const tone =
     tool.status === "running"
       ? "border-blox/30 bg-blox/10 text-white"
@@ -231,10 +281,18 @@ export function ToolChip({ tool }: { tool: ToolCall }) {
             <span className="relative size-1.5 rounded-full bg-blox-soft" />
           </span>
         ) : (
-          <span className={tool.status === "ok" ? "text-signal" : ""}>{tool.status === "ok" ? "✓" : "✗"}</span>
+          <span className={tool.status === "ok" ? "text-signal" : ""}>
+            {tool.status === "ok" ? "✓" : "✗"}
+          </span>
         )}
-        <span className="font-medium">{TOOL_LABELS[tool.name] ?? tool.name}</span>
-        {target && <span className="truncate font-mono text-white/35">{String(target)}</span>}
+        <span className="font-medium">
+          {TOOL_LABELS[tool.name] ?? tool.name}
+        </span>
+        {target && (
+          <span className="truncate font-mono text-white/35">
+            {String(target)}
+          </span>
+        )}
         <ChevronDown
           className={`size-3 shrink-0 opacity-40 transition-transform duration-500 ${EASE} ${open ? "rotate-180" : ""}`}
         />
@@ -256,7 +314,10 @@ export function RichText({ text }: { text: string }) {
   for (let i = 0; i < parts.length; i += 3) {
     if (parts[i]) {
       out.push(
-        <p key={i} className="leading-relaxed whitespace-pre-wrap text-white/85">
+        <p
+          key={i}
+          className="leading-relaxed whitespace-pre-wrap text-white/85"
+        >
           {inline(parts[i])}
         </p>,
       );
@@ -279,7 +340,10 @@ function inline(text: string) {
   return text.split(/(`[^`\n]+`|\*\*[^*\n]+\*\*)/g).map((seg, i) => {
     if (seg.startsWith("`") && seg.endsWith("`"))
       return (
-        <code key={i} className="rounded-md bg-white/[0.07] px-1.5 py-0.5 font-mono text-[0.88em] text-blox-soft">
+        <code
+          key={i}
+          className="rounded-md bg-white/[0.07] px-1.5 py-0.5 font-mono text-[0.88em] text-blox-soft"
+        >
           {seg.slice(1, -1)}
         </code>
       );
@@ -303,106 +367,210 @@ export function SettingsDialog({
   onClose: () => void;
 }) {
   const [draft, setDraft] = useState(settings);
+  const [browsing, setBrowsing] = useState(false);
+  // Own keys are tucked away; open the section only when they're already in use.
+  const [advanced, setAdvanced] = useState(settings.provider !== "openrouter");
   const p = PROVIDERS[draft.provider];
+  const ownKeyCount = [
+    draft.openrouterKey,
+    draft.apiKeys.claude,
+    draft.apiKeys.gemini,
+  ].filter(Boolean).length;
   const field =
     "mt-2 w-full rounded-xl border border-white/10 bg-black/40 px-3.5 py-2.5 font-mono text-sm outline-none transition-colors duration-500 focus:border-blox/60";
   return (
-    <div className="fixed inset-0 z-50 grid place-items-center bg-black/70 p-4 backdrop-blur-md" onClick={onClose}>
+    <div
+      className="fixed inset-0 z-50 grid place-items-center bg-black/70 p-4 backdrop-blur-md"
+      onClick={onClose}
+    >
       <div
         onClick={(e) => e.stopPropagation()}
         className="max-h-[92dvh] w-full max-w-md overflow-y-auto rounded-[2rem] border border-white/10 bg-white/[0.03] p-1.5 [scrollbar-width:none]"
       >
         <div className="rounded-[calc(2rem-0.375rem)] bg-[#0d0d10] p-6 shadow-[inset_0_1px_1px_rgba(255,255,255,0.07)]">
-          <p className="text-[10px] font-medium tracking-[0.2em] text-white/40 uppercase">Settings</p>
-          <h2 className="mt-1 font-display text-2xl font-bold tracking-tight">AI model</h2>
+          <p className="text-[10px] font-medium tracking-[0.2em] text-white/40 uppercase">
+            Settings
+          </p>
+          <h2 className="mt-1 font-display text-2xl font-bold tracking-tight">
+            AI model
+          </h2>
 
-          <div className="mt-6 grid grid-cols-4 gap-1 rounded-full bg-white/[0.04] p-1">
-            {(Object.keys(PROVIDERS) as (keyof typeof PROVIDERS)[]).map((id) => (
-              <button
-                key={id}
-                onClick={() => setDraft({ ...draft, provider: id })}
-                className={`rounded-full py-2 text-sm transition-all duration-500 ${EASE} ${
-                  draft.provider === id
-                    ? "bg-white/10 text-white shadow-[inset_0_1px_1px_rgba(255,255,255,0.08)]"
-                    : "text-white/45 hover:text-white/80"
-                }`}
-              >
-                {PROVIDERS[id].label}
-              </button>
-            ))}
-            <span className="grid place-items-center rounded-full py-2 text-sm text-white/20" title="Coming soon">
-              ChatGPT
-            </span>
-          </div>
-
-          <label className="mt-6 block text-sm text-white/55">Model</label>
-          <input
-            list={`models-${draft.provider}`}
-            value={draft.models[draft.provider]}
-            onChange={(e) => setDraft({ ...draft, models: { ...draft.models, [draft.provider]: e.target.value } })}
-            className={field}
-          />
-          <datalist id={`models-${draft.provider}`}>
-            {p.models.map((m) => (
-              <option key={m} value={m} />
-            ))}
-          </datalist>
-
-          {draft.provider === "openrouter" ? (
-            <p className="mt-5 rounded-xl border border-blox/20 bg-blox/[0.07] px-3.5 py-3 text-xs leading-relaxed text-white/60">
-              <span className="font-medium text-white/85">Bloxy runs on bits.</span> Sign in with Roblox to get free
-              bits every day. Each message costs what the model really costs. Prefer your own key? Add an OpenRouter
-              key below and it&apos;s used instead, free.
-            </p>
-          ) : (
-            <>
-              <label className="mt-5 block text-sm text-white/55">{p.label} API key</label>
-              <input
-                type="password"
-                autoComplete="off"
-                placeholder={`${p.keyPrefix}…`}
-                value={draft.apiKeys[draft.provider]}
-                onChange={(e) =>
-                  setDraft({ ...draft, apiKeys: { ...draft.apiKeys, [draft.provider]: e.target.value } })
-                }
-                className={field}
-              />
-              <p className="mt-2 text-xs leading-relaxed text-white/35">
-                Saved only in this browser. Get one at{" "}
-                <a href={p.keyUrl} target="_blank" rel="noreferrer" className="text-blox-soft hover:underline">
-                  {new URL(p.keyUrl).host}
-                </a>
-                . Leave empty to use the server&apos;s key, if it has one.
-              </p>
-            </>
-          )}
-
-          <div className="mt-6 border-t border-white/[0.07] pt-5">
-            <label className="block text-sm text-white/55">Your OpenRouter API key (optional)</label>
-            <input
-              type="password"
-              autoComplete="off"
-              placeholder="sk-or-…"
-              value={draft.openrouterKey}
-              onChange={(e) => setDraft({ ...draft, openrouterKey: e.target.value })}
-              className={field}
+          {/* The model Bloxy chats with: one card, changed in the model browser. */}
+          <button
+            type="button"
+            onClick={() =>
+              draft.provider === "openrouter"
+                ? setBrowsing(true)
+                : setAdvanced(true)
+            }
+            className="mt-5 flex w-full items-center gap-3 rounded-2xl border border-white/10 bg-white/[0.03] p-3 text-left transition-colors hover:border-white/20 hover:bg-white/[0.05]"
+          >
+            <ProviderLogo
+              model={draft.models[draft.provider]}
+              className="size-10"
             />
-            <p className="mt-2 text-xs leading-relaxed text-white/35">
-              When set, Bloxy chat and the Nodes tab use this key instead of your bits. Get one at{" "}
-              <a
-                href="https://openrouter.ai/keys"
-                target="_blank"
-                rel="noreferrer"
-                className="text-blox-soft hover:underline"
-              >
-                openrouter.ai
-              </a>
-              . Stored only in this browser.
-            </p>
+            <span className="min-w-0 flex-1">
+              <span className="block truncate text-sm font-medium text-white">
+                {draft.models[draft.provider]}
+              </span>
+              <span className="block text-xs text-white/45">
+                {draft.provider === "openrouter"
+                  ? "Runs on Bloxy"
+                  : `Direct with your ${p.label} key`}
+              </span>
+            </span>
+            <span className="rounded-lg bg-white/[0.07] px-2.5 py-1.5 text-xs text-white/75">
+              Change
+            </span>
+          </button>
+
+          <p className="mt-4 rounded-xl border border-blox/20 bg-blox/[0.07] px-3.5 py-3 text-xs leading-relaxed text-white/60">
+            <span className="font-medium text-white/85">
+              Bloxy runs on bits.
+            </span>{" "}
+            Sign in with Roblox to get free bits every day. Each message and
+            generation costs what the model really costs.
+          </p>
+
+          {/* Own API keys: hidden unless asked for. */}
+          <div className="mt-5 border-t border-white/[0.07] pt-4">
+            <button
+              type="button"
+              aria-expanded={advanced}
+              onClick={() => setAdvanced((a) => !a)}
+              className="flex w-full items-center justify-between text-left text-sm text-white/60 hover:text-white"
+            >
+              <span>
+                Use your own API keys
+                {ownKeyCount > 0 && (
+                  <span className="ml-2 rounded-md bg-signal/15 px-1.5 py-0.5 text-[10px] text-signal">
+                    {ownKeyCount} set
+                  </span>
+                )}
+              </span>
+              <ChevronDown
+                className={`size-4 transition-transform duration-300 ${advanced ? "rotate-180" : ""}`}
+              />
+            </button>
+
+            {advanced && (
+              <div className="mt-4">
+                <p className="text-xs leading-relaxed text-white/40">
+                  Optional. Keys are saved only in this browser and used instead
+                  of your bits.
+                </p>
+                <div className="mt-3 grid grid-cols-3 gap-1 rounded-full bg-white/[0.04] p-1">
+                  {(Object.keys(PROVIDERS) as (keyof typeof PROVIDERS)[]).map(
+                    (id) => (
+                      <button
+                        key={id}
+                        type="button"
+                        onClick={() => setDraft({ ...draft, provider: id })}
+                        className={`rounded-full py-2 text-sm transition-all duration-500 ${EASE} ${
+                          draft.provider === id
+                            ? "bg-white/10 text-white shadow-[inset_0_1px_1px_rgba(255,255,255,0.08)]"
+                            : "text-white/45 hover:text-white/80"
+                        }`}
+                      >
+                        {PROVIDERS[id].label}
+                      </button>
+                    ),
+                  )}
+                </div>
+
+                {draft.provider !== "openrouter" && (
+                  <>
+                    <label className="mt-4 block text-sm text-white/55">
+                      Model
+                    </label>
+                    <input
+                      list={`models-${draft.provider}`}
+                      value={draft.models[draft.provider]}
+                      onChange={(e) =>
+                        setDraft({
+                          ...draft,
+                          models: {
+                            ...draft.models,
+                            [draft.provider]: e.target.value,
+                          },
+                        })
+                      }
+                      className={field}
+                    />
+                    <datalist id={`models-${draft.provider}`}>
+                      {p.models.map((m) => (
+                        <option key={m} value={m} />
+                      ))}
+                    </datalist>
+                    <label className="mt-4 block text-sm text-white/55">
+                      {p.label} API key
+                    </label>
+                    <input
+                      type="password"
+                      autoComplete="off"
+                      placeholder={`${p.keyPrefix}…`}
+                      value={draft.apiKeys[draft.provider]}
+                      onChange={(e) =>
+                        setDraft({
+                          ...draft,
+                          apiKeys: {
+                            ...draft.apiKeys,
+                            [draft.provider]: e.target.value,
+                          },
+                        })
+                      }
+                      className={field}
+                    />
+                    <p className="mt-2 text-xs leading-relaxed text-white/35">
+                      Get one at{" "}
+                      <a
+                        href={p.keyUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="text-blox-soft hover:underline"
+                      >
+                        {new URL(p.keyUrl).host}
+                      </a>
+                      . Leave empty to use the server&apos;s key, if it has one.
+                    </p>
+                  </>
+                )}
+
+                <label className="mt-4 block text-sm text-white/55">
+                  OpenRouter API key
+                </label>
+                <input
+                  type="password"
+                  autoComplete="off"
+                  placeholder="sk-or-…"
+                  value={draft.openrouterKey}
+                  onChange={(e) =>
+                    setDraft({ ...draft, openrouterKey: e.target.value })
+                  }
+                  className={field}
+                />
+                <p className="mt-2 text-xs leading-relaxed text-white/35">
+                  Used for Bloxy chat, Idea Forge and the Nodes tab instead of
+                  bits. Get one at{" "}
+                  <a
+                    href="https://openrouter.ai/keys"
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-blox-soft hover:underline"
+                  >
+                    openrouter.ai
+                  </a>
+                  .
+                </p>
+              </div>
+            )}
           </div>
 
           <div className="mt-7 flex items-center justify-end gap-2">
-            <button onClick={onClose} className="rounded-full px-4 py-2 text-sm text-white/50 hover:text-white">
+            <button
+              onClick={onClose}
+              className="rounded-full px-4 py-2 text-sm text-white/50 hover:text-white"
+            >
               Cancel
             </button>
             <button
@@ -422,6 +590,22 @@ export function SettingsDialog({
           </div>
         </div>
       </div>
+      {/* Portaled, but React events still bubble here: keep them from closing Settings. */}
+      {browsing && (
+        <div onClick={(e) => e.stopPropagation()}>
+          <ModelBrowser
+            value={draft.models.openrouter}
+            onPick={(id) =>
+              setDraft({
+                ...draft,
+                provider: "openrouter",
+                models: { ...draft.models, openrouter: id },
+              })
+            }
+            onClose={() => setBrowsing(false)}
+          />
+        </div>
+      )}
     </div>
   );
 }

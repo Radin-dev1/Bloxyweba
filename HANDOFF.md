@@ -36,6 +36,9 @@ A website (Next.js) with an AI agent that builds inside **Roblox Studio**. It's 
   - **Wires carry data:** text → prompts, image → references or the first video frame, 3D → Studio step (the model is inserted first).
   - **3D generation is "3D as code":** an LLM on OpenRouter returns JSON parts (validated by zod `Build` in `openrouter.ts`). It previews in the node, then "Insert into Studio" calls the plugin tool `insert_parts`.
   - **Starting state:** the canvas starts empty and autosaves to localStorage (`bloxy.workflow.v2`).
+- **Create dock + Environment** (inspired by Nilo, own design): bottom-left dock with Idea Forge (I), Avatar (R) and Export (E) in `src/components/studio/dock/`; right-click the 3D view for the create wheel (parts, from text/image, avatar, import a Bloxy JSON, ask Bloxy); the rail's Environment panel sets sky/ground/fog presets drawn procedurally in `environment.ts` (display only, saved in localStorage).
+- **Model browser** (ForgeGUI-style): `ModelBrowser.tsx` + `ProviderLogo.tsx`, fed by `/api/gen/models` (now with description, context, price, reasoning/vision/tools). Settings hides API keys under "Use your own API keys".
+- **Nodes**: searchable Add Node menu (`nodes/AddNodeMenu.tsx`), 6 templates and a template gallery.
 - **Chat** is styled after ForgeGUI: a floating prompt bar over the 3D view, shown only on the Workspace tab.
 - **API keys:** user keys are entered in Settings and kept in the browser (Claude, Gemini, OpenRouter). The server can fall back to `ANTHROPIC_API_KEY`, `GEMINI_API_KEY` and `OPENROUTER_API_KEY`.
 

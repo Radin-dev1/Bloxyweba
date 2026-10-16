@@ -5,6 +5,7 @@ import { Edges, GizmoHelper, GizmoViewcube, OrbitControls, TransformControls, us
 import { Suspense, useEffect, useLayoutEffect, useMemo, useRef } from "react";
 import * as THREE from "three";
 import type { OrbitControls as OrbitControlsImpl } from "three-stdlib";
+import { DEFAULT_ENVIRONMENT, GROUND_PRESETS, SKY_PRESETS, drawGround, drawSky, type Environment } from "./environment";
 import type { PartEdit } from "./sceneMath";
 import type { Scene, ScenePart } from "./useScene";
 
@@ -145,10 +146,31 @@ const FOG_FAR = 750;
 const BASEPLATE_STUDS_PER_TILE = 8;
 const BASEPLATE_TEXTURE_TRANSPARENCY = 0.8;
 
-function BaseplateMesh({ part, showGrid, onPick }: { part: ScenePart; showGrid: boolean; onPick: () => void }) {
+function BaseplateMesh({
+  part,
+  showGrid,
+  env,
+  onPick,
+}: {
+  part: ScenePart;
+  showGrid: boolean;
+  env: Environment;
+  onPick: () => void;
+}) {
+  // The Environment panel can swap the ground look; "roblox" keeps Studio's own texture.
+  const groundColor = env.groundColor ?? (env.ground === "roblox" ? `#${part.color}` : GROUND_PRESETS[env.ground].color);
   const base = useTexture(BASEPLATE_TEXTURE_URL);
   const gl = useThree((s) => s.gl);
   const topTexture = useMemo(() => {
+    if (env.ground !== "roblox") {
+      const t = new THREE.CanvasTexture(drawGround(env.ground, groundColor));
+      t.wrapS = t.wrapT = THREE.RepeatWrapping;
+      t.colorSpace = THREE.SRGBColorSpace;
+      t.anisotropy = gl.capabilities.getMaxAnisotropy();
+      t.repeat.set(part.size[0] / env.tile, part.size[2] / env.tile);
+      t.needsUpdate = true;
+      return t;
+    }
     const img = base.image as HTMLImageElement | HTMLCanvasElement | ImageBitmap | undefined;
     const w = img?.width || 400;
     const h = img?.height || 400;
@@ -158,7 +180,7 @@ function BaseplateMesh({ part, showGrid, onPick }: { part: ScenePart; showGrid: 
     const ctx = c.getContext("2d")!;
     // Paint the baseplate colour first, then composite Studio's black grid Texture at 20% opacity
     // into a single opaque texture so there is never a second coplanar surface to z-fight.
-    ctx.fillStyle = `#${part.color}`;
+    ctx.fillStyle = groundColor;
     ctx.fillRect(0, 0, w, h);
     if (img && showGrid) {
       const mask = document.createElement("canvas");
@@ -176,14 +198,14 @@ function BaseplateMesh({ part, showGrid, onPick }: { part: ScenePart; showGrid: 
     t.wrapS = t.wrapT = THREE.RepeatWrapping;
     t.colorSpace = THREE.SRGBColorSpace;
     t.anisotropy = gl.capabilities.getMaxAnisotropy();
-    t.repeat.set(part.size[0] / BASEPLATE_STUDS_PER_TILE, part.size[2] / BASEPLATE_STUDS_PER_TILE);
+    t.repeat.set(part.size[0] / (env.tile || BASEPLATE_STUDS_PER_TILE), part.size[2] / (env.tile || BASEPLATE_STUDS_PER_TILE));
     t.needsUpdate = true;
     return t;
-  }, [base, gl, part.color, part.size, showGrid]);
+  }, [base, gl, groundColor, part.size, showGrid, env.ground, env.tile]);
 
   const materials = useMemo(() => {
     const side = new THREE.MeshStandardMaterial({
-      color: `#${part.color}`,
+      color: groundColor,
       roughness: 0.6,
       metalness: 0,
     });
@@ -194,7 +216,7 @@ function BaseplateMesh({ part, showGrid, onPick }: { part: ScenePart; showGrid: 
     });
     // BoxGeometry material groups: 0=+X, 1=-X, 2=+Y (top), 3=-Y (bottom), 4=+Z, 5=-Z
     return [side, side, top, side, side, side];
-  }, [part.color, topTexture]);
+  }, [groundColor, topTexture]);
 
   useEffect(
     () => () => {
@@ -423,7 +445,20 @@ function GradientSky() {
   return <primitive attach="background" object={texture} />;
 }
 
-function SkyBackground() {
+/** Environment-panel skies: a procedural equirectangular panorama that turns with the camera. */
+function ProceduralSky({ sky }: { sky: Environment["sky"] }) {
+  const texture = useMemo(() => {
+    const t = new THREE.CanvasTexture(drawSky(sky));
+    t.mapping = THREE.EquirectangularReflectionMapping;
+    t.colorSpace = THREE.SRGBColorSpace;
+    return t;
+  }, [sky]);
+  useEffect(() => () => texture.dispose(), [texture]);
+  return <primitive attach="background" object={texture} />;
+}
+
+function SkyBackground({ sky = "studio" }: { sky?: Environment["sky"] }) {
+  if (sky !== "studio") return <ProceduralSky sky={sky} />;
   if (!HAS_SKYBOX) return <GradientSky />;
   return (
     <Suspense fallback={<GradientSky />}>
@@ -485,6 +520,7 @@ export default function Viewport3D({
   tool,
   editable,
   options = DEFAULT_VIEWPORT_OPTIONS,
+  environment = DEFAULT_ENVIRONMENT,
   onEdit,
 }: {
   scene: Scene | null;
@@ -494,8 +530,10 @@ export default function Viewport3D({
   tool: Tool;
   editable: boolean;
   options?: ViewportOptions;
+  environment?: Environment;
   onEdit: (index: number, edit: PartEdit) => void;
 }) {
+  const skyInfo = SKY_PRESETS[environment.sky];
   const parts = useMemo(() => scene?.parts ?? [], [scene]);
   const drawn = useMemo(() => parts.map(displayPart), [parts]);
   const groups = useMemo(() => groupParts(drawn, isBaseplate), [drawn]);
@@ -515,13 +553,23 @@ export default function Viewport3D({
       }}
       gl={{ antialias: true }}
     >
-      <SkyBackground />
-      <fog attach="fog" args={[ATMOSPHERE_DECAY, FOG_NEAR, FOG_FAR]} />
-      <hemisphereLight args={["#d8e6f8", "#6d788b", 1.15]} />
+      <SkyBackground sky={environment.sky} />
+      {environment.fog.enabled && (
+        <fog
+          key={`${environment.fog.color}-${environment.sky}`}
+          attach="fog"
+          args={[
+            environment.fog.color ?? (environment.sky === "studio" ? ATMOSPHERE_DECAY : skyInfo.fog),
+            environment.fog.near ?? FOG_NEAR,
+            Math.max((environment.fog.near ?? FOG_NEAR) + 10, environment.fog.far ?? FOG_FAR),
+          ]}
+        />
+      )}
+      <hemisphereLight args={[skyInfo.hemiSky, skyInfo.hemiGround, skyInfo.hemi]} key={environment.sky} />
       <directionalLight
         position={[140, 260, 90]}
-        color="#f6f9ff"
-        intensity={2.0}
+        color={skyInfo.sun}
+        intensity={skyInfo.sunIntensity}
         castShadow={options.shadows !== "none"}
         shadow-bias={-0.0004}
         shadow-normalBias={0.03}
@@ -546,7 +594,7 @@ export default function Viewport3D({
       <Suspense fallback={null}>
         {baseplates.map((p) => (
           // Like Studio's Locked Baseplate: clicking it deselects instead of grabbing it.
-          <BaseplateMesh key={p.path} part={p} showGrid={options.showGrid} onPick={() => onSelect(null)} />
+          <BaseplateMesh key={p.path} part={p} showGrid={options.showGrid} env={environment} onPick={() => onSelect(null)} />
         ))}
       </Suspense>
       {selected !== null && selectedPart && (

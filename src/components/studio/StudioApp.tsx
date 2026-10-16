@@ -21,23 +21,30 @@ import { useAccount } from "./useAccount";
 import { useScene, type Scene } from "./useScene";
 import { DEFAULT_VIEWPORT_OPTIONS, type Tool, type ViewportOptions } from "./Viewport3D";
 import WorkspaceDock, { type DockPanel } from "./dock/WorkspaceDock";
+import CreateWheel, { type Primitive } from "./dock/CreateWheel";
+import ShortcutsHelp from "./dock/ShortcutsHelp";
+import { DEFAULT_ENVIRONMENT, loadEnvironment, saveEnvironment, type Environment } from "./environment";
+import { orientationDeg } from "./sceneMath";
+import type { ScenePart } from "./useScene";
 
 const Viewport3D = dynamic(() => import("./Viewport3D"), { ssr: false });
 const NodeEditor = dynamic(() => import("./NodeEditor"), { ssr: false });
 const IdeaForge = dynamic(() => import("./dock/IdeaForge"), { ssr: false });
 const AvatarWorkbench = dynamic(() => import("./dock/AvatarWorkbench"), { ssr: false });
 const ExportPanel = dynamic(() => import("./dock/ExportPanel"), { ssr: false });
+const EnvironmentPanel = dynamic(() => import("./dock/EnvironmentPanel"), { ssr: false });
 
 const EASE = "ease-[var(--ease-spring)]";
 const PLUGIN_VERSION = "0.3.0";
 
 type Tab = "workspace" | "nodes";
-type WorkspacePanel = "explorer" | "properties" | "view" | "connect" | null;
+type WorkspacePanel = "explorer" | "properties" | "view" | "environment" | "connect" | null;
 
 const RAIL_ITEMS: { id: Exclude<WorkspacePanel, null>; label: string; icon: React.ReactNode }[] = [
   { id: "explorer", label: "Explorer", icon: <path d="M4 5h16M4 10h16M4 15h10M4 20h7" /> },
   { id: "properties", label: "Properties", icon: <><rect x="4" y="3" width="16" height="18" rx="2" /><path d="M8 8h8M8 12h8M8 16h5" /></> },
   { id: "view", label: "Viewport settings", icon: <><circle cx="12" cy="12" r="8.5" /><path d="M12 3.5v17M3.5 12h17M6 6l12 12M18 6 6 18" /></> },
+  { id: "environment", label: "Environment", icon: <><path d="M7 17.5a4 4 0 0 1 .4-8 5.5 5.5 0 0 1 10.6 1.6A3.3 3.3 0 0 1 17.5 17.5Z" /><path d="M3 21h18" /></> },
   { id: "connect", label: "Connect Studio", icon: <><path d="M8 12h8M12 8v8" /><circle cx="12" cy="12" r="9" /></> },
 ];
 
@@ -85,6 +92,20 @@ export default function StudioApp() {
   const [workspacePanel, setWorkspacePanel] = useState<WorkspacePanel>(null);
   const [viewportOptions, setViewportOptions] = useState<ViewportOptions>(DEFAULT_VIEWPORT_OPTIONS);
   const [dockPanel, setDockPanel] = useState<DockPanel>(null);
+  const [environment, setEnvironmentState] = useState<Environment>(DEFAULT_ENVIRONMENT);
+  useEffect(() => {
+    const t = setTimeout(() => setEnvironmentState(loadEnvironment()), 0); // browser-only setting
+    return () => clearTimeout(t);
+  }, []);
+  const setEnvironment = (env: Environment) => {
+    setEnvironmentState(env);
+    saveEnvironment(env);
+  };
+  // Right-click (without dragging) on the 3D view opens the create wheel.
+  const [wheel, setWheel] = useState<{ x: number; y: number } | null>(null);
+  const rightDown = useRef<{ x: number; y: number } | null>(null);
+  const importInput = useRef<HTMLInputElement>(null);
+  const primitiveCount = useRef(0);
   const connected = !!status?.connected;
 
   const sceneApi = useScene(sessionId, connected);
@@ -186,13 +207,77 @@ export default function StudioApp() {
     return data.result.path;
   };
 
+  /** Adds one Roblox primitive, spread out so repeated adds don't stack. */
+  const addPrimitive = async (shape: Primitive) => {
+    const n = ++primitiveCount.current;
+    const size: [number, number, number] =
+      shape === "Block" ? [4, 1, 2] : shape === "Wedge" ? [4, 2, 4] : [4, 4, 4];
+    const name = `${shape === "Block" ? "Part" : shape}${n}`;
+    const spot = connected ? [0, 0, 0] : [[0, 8, -8, 16, -16][(n - 1) % 5], 0, -Math.floor((n - 1) / 5) * 8];
+    try {
+      const path = await insertBuild({
+        name,
+        parts: [
+          {
+            name: shape === "Block" ? "Part" : shape,
+            shape,
+            size,
+            position: [spot[0], size[1] / 2, spot[2]],
+            rotation: [0, 0, 0],
+            color: "a3a2a5",
+            material: "Plastic",
+            transparency: 0,
+          },
+        ],
+      });
+      if (!connected) setSelectedPath(`${path}.${shape === "Block" ? "Part" : shape}`);
+    } catch (err) {
+      flash((err as Error).message);
+    }
+  };
+
+  /** Imports a Bloxy Export JSON (or a raw build) back into the place. */
+  const importFile = async (file: File) => {
+    try {
+      const data = JSON.parse(await file.text()) as { name?: string; parts?: (ScenePart & Partial<BuildT["parts"][number]>)[] };
+      if (!Array.isArray(data.parts) || data.parts.length === 0) throw new Error("That file has no parts.");
+      const parts = data.parts.slice(0, 400).map((p, i) => ({
+        name: p.name ?? p.path?.split(".").pop() ?? `Part${i + 1}`,
+        shape: (["Block", "Ball", "Cylinder", "Wedge"].includes(p.shape) ? p.shape : "Block") as BuildT["parts"][number]["shape"],
+        size: p.size,
+        position: (p.position ?? [p.cframe[0], p.cframe[1], p.cframe[2]]) as [number, number, number],
+        rotation: (p.rotation ?? (p.cframe?.length >= 12 ? orientationDeg(p as ScenePart) : [0, 0, 0])) as [number, number, number],
+        color: String(p.color ?? "a3a2a5").replace("#", ""),
+        material: p.material ?? "Plastic",
+        transparency: p.transparency ?? 0,
+      }));
+      const name = (data.name || file.name.replace(/\.json$/i, "")).replace(/[^\w -]/g, "").slice(0, 60) || "Imported";
+      await insertBuild({ name, parts });
+    } catch (err) {
+      flash(err instanceof SyntaxError ? "That isn't a Bloxy export (JSON)." : (err as Error).message);
+    }
+  };
+
   const outdated = connected && status?.studioInfo?.pluginVersion !== PLUGIN_VERSION;
   const editable = !connected || !outdated;
 
   return (
     <div className="relative h-dvh overflow-hidden bg-[#dfe9f8] text-zinc-100">
       {/* ── Stage ── */}
-      <div className="absolute inset-0">
+      <div
+        className="absolute inset-0"
+        onPointerDown={(e) => {
+          if (e.button === 2) rightDown.current = { x: e.clientX, y: e.clientY };
+        }}
+        onContextMenu={(e) => {
+          if (tab !== "workspace") return;
+          e.preventDefault();
+          const start = rightDown.current;
+          // A right-drag pans the camera; only a still right-click opens the wheel.
+          if (start && Math.hypot(e.clientX - start.x, e.clientY - start.y) > 6) return;
+          setWheel({ x: e.clientX, y: e.clientY });
+        }}
+      >
         {tab === "workspace" ? (
           <Viewport3D
             scene={scene}
@@ -202,6 +287,7 @@ export default function StudioApp() {
             tool={tool}
             editable={editable}
             options={viewportOptions}
+            environment={environment}
             onEdit={onEdit}
           />
         ) : (
@@ -293,6 +379,7 @@ export default function StudioApp() {
                 <div className="flex min-w-0 items-center gap-2.5"><span className="grid size-7 place-items-center rounded-lg bg-white/[0.07] text-blox-soft"><RailIcon>{RAIL_ITEMS.find((item) => item.id === workspacePanel)?.icon}</RailIcon></span><div className="min-w-0"><h2 className="truncate text-[13px] font-semibold text-white">{workspacePanel === "connect" ? "Studio connection" : workspacePanel === "view" ? "Viewport settings" : workspacePanel[0].toUpperCase() + workspacePanel.slice(1)}</h2>{workspacePanel === "connect" && <p className="text-[10px] text-white/40">{connected ? "Connected to Roblox Studio" : "Local demo workspace"}</p>}</div></div>
                 <button type="button" aria-label="Close panel" onClick={() => setWorkspacePanel(null)} className="grid size-8 place-items-center rounded-lg text-white/45 transition-colors hover:bg-white/[0.08] hover:text-white focus-visible:ring-2 focus-visible:ring-blox-soft">×</button>
               </div>
+              {workspacePanel === "environment" && <EnvironmentPanel env={environment} onChange={setEnvironment} />}
               {workspacePanel === "explorer" && <Explorer parts={parts} selected={selected} onSelect={onSelect} />}
               {workspacePanel === "properties" && (selectedPart && selected !== null ? <Properties part={selectedPart} editable={editable} onEdit={(edit) => void onEdit(selected, edit)} onAsk={() => setInput((v) => `${v ? v.trimEnd() + " " : ""}\`${selectedPart.path}\` `)} /> : <div className="grid flex-1 place-items-center px-7 text-center"><div><span className="mx-auto grid size-11 place-items-center rounded-2xl border border-white/10 bg-white/[0.04] text-white/45"><RailIcon>{RAIL_ITEMS[1].icon}</RailIcon></span><p className="mt-3 text-sm font-medium text-white/80">Nothing selected</p><p className="mt-1 text-xs leading-relaxed text-white/40">Pick a part in the viewport or Explorer to inspect and edit its properties.</p><button type="button" onClick={() => setWorkspacePanel("explorer")} className="mt-4 rounded-lg border border-white/10 bg-white/[0.05] px-3 py-1.5 text-xs text-white/75 transition hover:bg-white/10">Open Explorer</button></div></div>)}
               {workspacePanel === "connect" && (connected ? <div className="flex-1 overflow-y-auto p-4"><PlaceCard placeName={status?.studioInfo?.placeName ?? "Your place"} count={sceneApi.scene?.parts.length ?? 0} truncated={!!sceneApi.scene?.truncated} loading={sceneApi.loading} error={sceneApi.error} outdated={outdated} onNewCode={newPairCode} /></div> : <div className="flex-1 overflow-y-auto p-3"><PairPanel status={status} onNewCode={newPairCode} error={sessionError} /></div>)}
@@ -338,6 +425,33 @@ export default function StudioApp() {
           {dockPanel === "export" && (
             <ExportPanel parts={parts} selectedPart={selectedPart} onClose={() => setDockPanel(null)} />
           )}
+          <ShortcutsHelp />
+          {wheel && (
+            <CreateWheel
+              x={wheel.x}
+              y={wheel.y}
+              onClose={() => setWheel(null)}
+              onPrimitive={(shape) => void addPrimitive(shape)}
+              onIdeaForge={() => setDockPanel("forge")}
+              onAvatar={() => setDockPanel("avatar")}
+              onImport={() => importInput.current?.click()}
+              onAsk={() => {
+                setInput((v) => v || "Build ");
+                document.querySelector<HTMLTextAreaElement>("form textarea")?.focus();
+              }}
+            />
+          )}
+          <input
+            ref={importInput}
+            type="file"
+            accept=".json,application/json"
+            hidden
+            onChange={(e) => {
+              const f = e.target.files?.[0];
+              e.target.value = "";
+              if (f) void importFile(f);
+            }}
+          />
         </>
       )}
 
@@ -357,6 +471,7 @@ export default function StudioApp() {
             chat.clear();
             setInput("");
           }}
+          bits={settings.provider === "openrouter" && !settings.openrouterKey && account?.bitsEnabled ? account.bits : null}
         />
       )}
 
@@ -499,6 +614,13 @@ function PlaceCard({
   );
 }
 
+const CHAT_STARTERS = [
+  "Build a cozy fishing village",
+  "Make a lava obby with 10 stages",
+  "Create a pizza shop tycoon",
+  "Add a day/night cycle",
+];
+
 function ChatDock({
   chat,
   input,
@@ -507,6 +629,7 @@ function ChatDock({
   modelLabel,
   onPickModel,
   onClearChat,
+  bits,
 }: {
   chat: ReturnType<typeof useChat>;
   input: string;
@@ -515,6 +638,8 @@ function ChatDock({
   modelLabel: string;
   onPickModel: (id: string) => void;
   onClearChat: () => void;
+  /** Bits left when chatting on bits (null hides the counter). */
+  bits: number | null;
 }) {
   const [open, setOpen] = useState(true);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -545,6 +670,22 @@ function ChatDock({
                 <MessageView key={i} message={m} streaming={busy && i === messages.length - 1} />
               ))}
             </div>
+          </div>
+        )}
+
+        {/* Starter ideas while the chat is empty */}
+        {messages.length === 0 && !input && (
+          <div className="flex flex-wrap justify-center gap-1.5">
+            {CHAT_STARTERS.map((idea) => (
+              <button
+                key={idea}
+                type="button"
+                onClick={() => setInput(idea)}
+                className="rounded-full border border-white/10 bg-[#0e1014]/75 px-3 py-1.5 text-[11.5px] text-white/65 backdrop-blur-xl transition-colors hover:border-blox/40 hover:text-white"
+              >
+                {idea}
+              </button>
+            ))}
           </div>
         )}
 
@@ -607,6 +748,11 @@ function ChatDock({
                 </>
               )}
             </div>
+            {bits !== null && !busy && (
+              <span className="ml-auto hidden shrink-0 text-[11px] tabular-nums text-white/40 sm:block" title="Bits left today">
+                {bits.toLocaleString()} bits left
+              </span>
+            )}
             {busy ? (
               <button
                 type="button"
