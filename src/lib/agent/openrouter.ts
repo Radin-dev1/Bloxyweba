@@ -30,17 +30,33 @@ export async function runOpenRouter({ model, apiKey, history, executeTool, emit,
       error?: { message?: string };
     };
     try {
-      const res = await fetch(`${OPENROUTER}/chat/completions`, {
-        method: "POST",
-        signal,
-        headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json", "X-Title": "Bloxy" },
-        body: JSON.stringify({ model, messages, tools, max_tokens: 16000 }),
+      // Free models are rate-limited hard: let OpenRouter fall back to any free model, and retry
+      // briefly on rate limits / busy providers before giving up.
+      const free = model.endsWith(":free") || model === "openrouter/free";
+      const body = JSON.stringify({
+        model,
+        ...(free && model !== "openrouter/free" ? { models: [model, "openrouter/free"] } : {}),
+        messages,
+        tools,
+        max_tokens: 16000,
       });
-      data = await res.json();
-      if (!res.ok) {
+      let res: Response | null = null;
+      for (const wait of [0, 2000, 6000]) {
+        if (wait) await new Promise((r) => setTimeout(r, wait));
+        if (signal.aborted) return;
+        res = await fetch(`${OPENROUTER}/chat/completions`, {
+          method: "POST",
+          signal,
+          headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json", "X-Title": "Bloxy" },
+          body,
+        });
+        if (![429, 502, 503].includes(res.status)) break;
+      }
+      data = await res!.json().catch(() => ({}));
+      if (!res!.ok) {
         await billing?.afterStep(null, true);
-        const err = new Error(data.error?.message ?? `OpenRouter returned ${res.status}`) as Error & { status: number };
-        err.status = res.status;
+        const err = new Error(data.error?.message ?? `OpenRouter returned ${res!.status}`) as Error & { status: number };
+        err.status = res!.status;
         throw err;
       }
     } catch (err) {

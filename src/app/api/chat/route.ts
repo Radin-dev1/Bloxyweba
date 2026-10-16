@@ -17,7 +17,8 @@ import { BIT_ESTIMATES, refund, reserve, resolveBilling, settle } from "@/lib/bi
 export const maxDuration = 300;
 
 const Body = z.object({
-  sessionId: z.string().min(1),
+  // Optional: without a Studio session (e.g. no Redis on Vercel) the reply streams back directly.
+  sessionId: z.string().min(1).optional(),
   jobId: z.string().min(1).max(100).optional(),
   provider: z.enum(["openrouter", "claude", "gemini"]),
   model: z.string().min(1).max(100),
@@ -28,7 +29,11 @@ const Body = z.object({
     .max(200),
 });
 
-/** Starts an agent job and persists progress independently of the browser connection. */
+/**
+ * Starts an agent job and persists progress independently of the browser connection. When no
+ * job store is available (no session, or no Redis on Vercel) the reply streams back directly
+ * as NDJSON instead, in offline mode, so the chat always works.
+ */
 export async function POST(request: Request) {
   const parsed = Body.safeParse(await request.json().catch(() => null));
   if (!parsed.success) return Response.json({ error: "bad_request" }, { status: 400 });
@@ -75,22 +80,16 @@ export async function POST(request: Request) {
 
   const { bridge } = await import("@/lib/bridge");
   // Without Studio the chat still works: it can talk, write Luau and build into the Bloxy workspace.
-  const studioConnected = !!(await bridge.getSessionStatus(sessionId).catch(() => null))?.connected;
-  const jobCreated = await bridge.createChatJob(sessionId, jobId).catch(() => false);
-  if (!jobCreated) return Response.json({ error: "Could not start this chat job. Reload Studio and try again." }, { status: 503 });
+  const status = sessionId ? await bridge.getSessionStatus(sessionId).catch(() => null) : null;
+  const studioConnected = !!status?.connected;
+  const jobCreated = sessionId ? await bridge.createChatJob(sessionId, jobId).catch(() => false) : false;
+  if (!sessionId || !jobCreated) return streamReply(request, { provider, model, apiKey, history, billing });
+
   const controller = new AbortController();
   let writes = Promise.resolve();
-  // Text after a tool step starts a new paragraph, so replies from separate steps don't run together.
-  let spoke = false;
-  let afterTool = false;
+  const tidy = paragraphs();
   const emit = (raw: AgentEvent) => {
-    let event = raw;
-    if (raw.type === "tool_call") afterTool = true;
-    if (raw.type === "text" && raw.delta) {
-      if (spoke && afterTool) event = { ...raw, delta: `\n\n${raw.delta}` };
-      spoke = true;
-      afterTool = false;
-    }
+    const event = tidy(raw);
     writes = writes.then(() => bridge.appendChatJobEvent(sessionId, jobId, event)).then(() => undefined);
   };
   emit({ type: "user", content: history.at(-1)?.content ?? "" });
@@ -164,10 +163,67 @@ export async function DELETE(request: Request) {
   return Response.json({ stopped });
 }
 
+/** Text after a tool step starts a new paragraph, so replies from separate steps don't run together. */
+function paragraphs() {
+  let spoke = false;
+  let afterTool = false;
+  return (raw: AgentEvent): AgentEvent => {
+    if (raw.type === "tool_call") afterTool = true;
+    if (raw.type !== "text" || !raw.delta) return raw;
+    const event = spoke && afterTool ? { ...raw, delta: `\n\n${raw.delta}` } : raw;
+    spoke = true;
+    afterTool = false;
+    return event;
+  };
+}
+
+type StreamRun = {
+  provider: "openrouter" | "claude" | "gemini";
+  model: string;
+  apiKey: string;
+  history: { role: "user" | "assistant"; content: string }[];
+  billing?: StepBilling;
+};
+
+/** Runs the agent in offline mode and streams its events back as newline-delimited JSON. */
+function streamReply(request: Request, run: StreamRun) {
+  const encoder = new TextEncoder();
+  const tidy = paragraphs();
+  const stream = new ReadableStream<Uint8Array>({
+    async start(controller) {
+      let closed = false;
+      const emit = (raw: AgentEvent) => {
+        if (!closed) controller.enqueue(encoder.encode(JSON.stringify(tidy(raw)) + "\n"));
+      };
+      try {
+        await runAgent(run.provider, {
+          ...run,
+          emit,
+          signal: request.signal,
+          executeTool: makeOfflineExecutor(emit),
+          tools: OFFLINE_TOOLS,
+          system: OFFLINE_SYSTEM_PROMPT,
+        });
+      } catch (err) {
+        if (!request.signal.aborted) emit({ type: "error", message: describeError(err) });
+      } finally {
+        emit({ type: "done" });
+        closed = true;
+        controller.close();
+      }
+    },
+  });
+  return new Response(stream, {
+    headers: { "Content-Type": "application/x-ndjson; charset=utf-8", "Cache-Control": "no-store" },
+  });
+}
+
 function describeError(err: unknown) {
   const e = err as { status?: number; message?: string };
   if (e?.status === 401 || e?.status === 403) return "The API key was rejected. Check it in Settings.";
-  if (e?.status === 429) return "Rate limited by the AI provider. Wait a moment and try again.";
+  if (e?.status === 429)
+    return "This model is busy or rate-limited right now (free models are limited by OpenRouter). Wait a minute, or pick another model from the model chip.";
+  if (e?.status === 402) return "Your OpenRouter account is out of credits for this model. Pick a free model, or add credits on openrouter.ai.";
   if (e?.status === 404) return "That model isn't available for this API key. Pick another model in Settings.";
   return e?.message ? String(e.message).slice(0, 500) : "Something went wrong.";
 }

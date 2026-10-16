@@ -28,6 +28,13 @@ export const MUTATING_TOOLS = new Set([
 const HISTORY_KEY = "bloxy.chat.v1";
 const MAX_SAVED_MESSAGES = 80;
 
+/** Readable error text for the chat ("Stopped." when the user pressed Stop). */
+function describe(err: unknown) {
+  if ((err as Error)?.name === "AbortError") return "Stopped.";
+  if (err instanceof TypeError) return "Couldn't reach Bloxy. Check your connection and try again.";
+  return err instanceof Error ? err.message : String(err);
+}
+
 function loadHistory(): Message[] {
   try {
     const raw = localStorage.getItem(HISTORY_KEY);
@@ -82,6 +89,7 @@ export function useChat({
   const busyRef = useRef(false);
   const jobRef = useRef<ActiveJob | null>(null);
   const messagesByJob = useRef(new Map<string, number>());
+  const streamAbort = useRef<AbortController | null>(null);
 
   const commit = useCallback((next: Message[]) => {
     messagesRef.current = next;
@@ -137,7 +145,7 @@ export function useChat({
         await new Promise((resolve) => setTimeout(resolve, 1200));
         continue;
       }
-      if (response.status === 404) throw new Error("This Bloxy run is no longer available.");
+      if (response.status === 404) throw new Error("This reply was interrupted (the server restarted). Send your message again.");
       if (!response.ok) {
         await new Promise((resolve) => setTimeout(resolve, 1200));
         continue;
@@ -164,7 +172,7 @@ export function useChat({
       const content = text.trim();
       if (!content) return { ok: false, text: "", tools: 0, mutated: false, error: "Empty message" };
       if (busyRef.current) return { ok: false, text: "", tools: 0, mutated: false, error: "Bloxy is busy" };
-      if (!sessionId) return { ok: false, text: "", tools: 0, mutated: false, error: "No session yet" };
+      // No session (e.g. no Redis on Vercel) is fine: the server streams the reply back directly.
 
       const history = [...messagesRef.current, { role: "user" as const, content, tools: [] }];
       const jobId = crypto.randomUUID();
@@ -186,11 +194,13 @@ export function useChat({
 
       updateJob({ jobId, nextSeq: -1, status: "starting" });
       try {
+        streamAbort.current = new AbortController();
         const res = await fetch("/api/chat", {
           method: "POST",
+          signal: streamAbort.current.signal,
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            sessionId,
+            sessionId: sessionId ?? undefined,
             jobId,
             provider: settings.provider,
             model: settings.models[settings.provider],
@@ -209,6 +219,30 @@ export function useChat({
           if (res.status === 400 && data.error?.includes("API key")) onNeedsKey?.();
           return finish();
         }
+        if (res.headers.get("content-type")?.includes("ndjson")) {
+          // Direct stream (no background job store): read events as they arrive.
+          commit([...messagesRef.current, { role: "user", content, tools: [] }, { role: "assistant", content: "", tools: [] }]);
+          messagesByJob.current.set(jobId, messagesRef.current.length - 1);
+          updateJob(null);
+          const reader = res.body.getReader();
+          const decoder = new TextDecoder();
+          let buffer = "";
+          for (;;) {
+            const { value, done } = await reader.read();
+            if (done) break;
+            buffer += decoder.decode(value, { stream: true });
+            const lines = buffer.split("\n");
+            buffer = lines.pop() ?? "";
+            for (const line of lines) {
+              if (!line.trim()) continue;
+              try {
+                applyEvent(jobId, JSON.parse(line) as AgentEvent);
+              } catch {}
+            }
+          }
+          messagesByJob.current.delete(jobId);
+          return finish();
+        }
         const created = await res.json() as { jobId: string };
       const job = { jobId: created.jobId, nextSeq: -1, status: "running" };
       commit([...messagesRef.current, { role: "user", content, tools: [] }, { role: "assistant", content: "", tools: [], jobId: created.jobId }]);
@@ -218,9 +252,9 @@ export function useChat({
       } catch (err) {
         if (messagesByJob.current.has(jobId)) {
           const index = messagesByJob.current.get(jobId)!;
-          updateAt(index, (message) => ({ ...message, error: String(err) }));
+          updateAt(index, (message) => ({ ...message, error: describe(err) }));
         } else {
-          commit([...messagesRef.current, { role: "user", content, tools: [] }, { role: "assistant", content: "", tools: [], error: String(err) }]);
+          commit([...messagesRef.current, { role: "user", content, tools: [] }, { role: "assistant", content: "", tools: [], error: describe(err) }]);
         }
         updateJob(null);
       } finally {
@@ -229,10 +263,11 @@ export function useChat({
       }
       return finish();
     },
-    [sessionId, settings, commit, pollJob, updateJob, updateAt, onTurnEnd, onNeedsKey],
+    [sessionId, settings, commit, pollJob, updateJob, updateAt, applyEvent, onTurnEnd, onNeedsKey],
   );
 
   const stop = useCallback(async () => {
+    streamAbort.current?.abort();
     const job = jobRef.current;
     if (!job || !sessionId) return;
     await fetch(`/api/chat?sessionId=${encodeURIComponent(sessionId)}&jobId=${encodeURIComponent(job.jobId)}`, { method: "DELETE" });
