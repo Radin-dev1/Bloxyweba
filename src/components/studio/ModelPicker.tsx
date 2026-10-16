@@ -1,0 +1,176 @@
+"use client";
+
+import { useEffect, useMemo, useRef, useState } from "react";
+import { PROVIDERS } from "@/lib/agent/providers";
+import { ChevronDown, Search } from "../landing/icons";
+
+type ModelOption = { id: string; name: string };
+
+// OpenRouter's full text-model list, fetched once per page load (public, no key needed).
+let modelsPromise: Promise<ModelOption[]> | null = null;
+function loadModels() {
+  modelsPromise ??= fetch("/api/gen/models?kind=text")
+    .then((r) => r.json())
+    .then((d: { models?: (ModelOption | string)[] }) =>
+      (d.models ?? []).map((m) => (typeof m === "string" ? { id: m, name: m } : m)),
+    )
+    .catch(() => {
+      modelsPromise = null; // let the next open retry
+      return [];
+    });
+  return modelsPromise;
+}
+
+const RECOMMENDED = PROVIDERS.openrouter.models;
+const MAX_SHOWN = 200;
+
+/**
+ * The chat dock's model chip: click to search every model OpenRouter offers (or type any
+ * model id) and run Bloxy on it.
+ */
+export default function ModelPicker({ value, onPick }: { value: string; onPick: (id: string) => void }) {
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState("");
+  const [models, setModels] = useState<ModelOption[] | null>(null);
+  const [active, setActive] = useState(0);
+  const root = useRef<HTMLDivElement>(null);
+  const listRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    let alive = true;
+    void loadModels().then((m) => alive && setModels(m));
+    const onDown = (e: MouseEvent) => {
+      if (!root.current?.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener("mousedown", onDown);
+    return () => {
+      alive = false;
+      document.removeEventListener("mousedown", onDown);
+    };
+  }, [open]);
+
+  const results = useMemo(() => {
+    const all = models ?? [];
+    const terms = query.trim().toLowerCase().split(/\s+/).filter(Boolean);
+    const match = (m: ModelOption) => terms.every((t) => m.id.toLowerCase().includes(t) || m.name.toLowerCase().includes(t));
+    const recommended = RECOMMENDED.map((id) => all.find((m) => m.id === id) ?? { id, name: id }).filter(match);
+    const rest = all.filter((m) => !RECOMMENDED.includes(m.id) && match(m)).slice(0, MAX_SHOWN);
+    const typed = query.trim();
+    // Any OpenRouter id can be used, even if it's not in the list (new or hidden models).
+    const custom =
+      typed.includes("/") && !all.some((m) => m.id === typed) && !RECOMMENDED.includes(typed)
+        ? [{ id: typed, name: "Use this model id" }]
+        : [];
+    return { recommended, rest, custom, flat: [...custom, ...recommended, ...rest] };
+  }, [models, query]);
+
+  const pick = (id: string) => {
+    onPick(id);
+    setOpen(false);
+    setQuery("");
+  };
+
+  // Keep the highlighted row visible while arrowing through the list.
+  useEffect(() => {
+    listRef.current?.querySelector(`[data-index="${active}"]`)?.scrollIntoView({ block: "nearest" });
+  }, [active]);
+
+  const row = (m: ModelOption, index: number) => (
+    <button
+      key={`${m.id}-${index}`}
+      type="button"
+      data-index={index}
+      onMouseEnter={() => setActive(index)}
+      onClick={() => pick(m.id)}
+      className={`flex w-full flex-col items-start rounded-lg px-2.5 py-1.5 text-left ${
+        active === index ? "bg-white/[0.08]" : ""
+      }`}
+    >
+      <span className="flex w-full items-center gap-2">
+        <span className="truncate text-[12.5px] text-white/90">{m.name}</span>
+        {m.id === value && <span className="ml-auto shrink-0 text-[10px] text-signal">current</span>}
+      </span>
+      <span className="truncate font-mono text-[10.5px] text-white/40">{m.id}</span>
+    </button>
+  );
+
+  let i = 0;
+  return (
+    <div ref={root} className="relative min-w-0">
+      <button
+        type="button"
+        onClick={() => {
+          setOpen((o) => !o);
+          setActive(0);
+        }}
+        title="Change model"
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        className="flex max-w-[260px] items-center gap-1 truncate rounded-full bg-white/[0.05] px-2.5 py-1 font-mono transition-colors hover:bg-white/[0.1] hover:text-white/80"
+      >
+        <span className="truncate">{value}</span>
+        <ChevronDown className={`size-3 shrink-0 transition-transform ${open ? "rotate-180" : ""}`} />
+      </button>
+
+      {open && (
+        <div className="absolute bottom-full left-0 z-40 mb-2 w-[min(380px,calc(100vw-2rem))] rounded-2xl border border-white/10 bg-[#111318]/97 p-1.5 font-sans shadow-2xl backdrop-blur-xl">
+          <div className="flex items-center gap-2 rounded-xl border border-white/[0.08] bg-black/30 px-2.5 py-2">
+            <Search className="size-3.5 shrink-0 text-white/35" />
+            <input
+              autoFocus
+              value={query}
+              onChange={(e) => {
+                setQuery(e.target.value);
+                setActive(0);
+              }}
+              onKeyDown={(e) => {
+                if (e.key === "ArrowDown") {
+                  e.preventDefault();
+                  setActive((a) => Math.min(a + 1, results.flat.length - 1));
+                } else if (e.key === "ArrowUp") {
+                  e.preventDefault();
+                  setActive((a) => Math.max(a - 1, 0));
+                } else if (e.key === "Enter") {
+                  e.preventDefault();
+                  const chosen = results.flat[active];
+                  if (chosen) pick(chosen.id);
+                } else if (e.key === "Escape") {
+                  setOpen(false);
+                }
+              }}
+              placeholder="Search OpenRouter models, or paste a model id…"
+              className="w-full bg-transparent text-[12.5px] text-white outline-none placeholder:text-white/30"
+            />
+          </div>
+
+          <div ref={listRef} role="listbox" className="mt-1.5 max-h-[320px] overflow-y-auto pr-0.5 [scrollbar-width:thin]">
+            {results.custom.map((m) => row(m, i++))}
+            {results.recommended.length > 0 && (
+              <p className="px-2.5 pt-1.5 pb-1 text-[10px] tracking-[0.16em] text-white/35 uppercase">
+                Recommended for Bloxy
+              </p>
+            )}
+            {results.recommended.map((m) => row(m, i++))}
+            {results.rest.length > 0 && (
+              <p className="px-2.5 pt-2.5 pb-1 text-[10px] tracking-[0.16em] text-white/35 uppercase">
+                All OpenRouter models{models ? ` (${models.length})` : ""}
+              </p>
+            )}
+            {results.rest.map((m) => row(m, i++))}
+            {models === null && <p className="px-2.5 py-3 text-xs text-white/40">Loading models…</p>}
+            {models !== null && results.flat.length === 0 && (
+              <p className="px-2.5 py-3 text-xs leading-relaxed text-white/40">
+                No match. Paste a full model id like <span className="font-mono text-white/60">provider/model</span> to
+                use it anyway.
+              </p>
+            )}
+          </div>
+          <p className="border-t border-white/[0.06] px-2.5 pt-1.5 pb-0.5 text-[10px] text-white/30">
+            Runs on Bloxy (bits, or your own OpenRouter key).
+          </p>
+        </div>
+      )}
+    </div>
+  );
+}

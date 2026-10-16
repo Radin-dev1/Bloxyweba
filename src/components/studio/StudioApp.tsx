@@ -16,6 +16,7 @@ import { buildToParts } from "./nodes/ModelPreview";
 import { applyEdit, toStudioProperties, type PartEdit } from "./sceneMath";
 import { useChat } from "./useChat";
 import AccountPill from "./AccountPill";
+import ModelPicker from "./ModelPicker";
 import { useAccount } from "./useAccount";
 import { useScene, type Scene } from "./useScene";
 import { DEFAULT_VIEWPORT_OPTIONS, type Tool, type ViewportOptions } from "./Viewport3D";
@@ -313,6 +314,10 @@ export default function StudioApp() {
           setInput={setInput}
           connected={connected}
           modelLabel={settings.models[settings.provider]}
+          // Any OpenRouter model runs through Bloxy, so picking one switches the provider too.
+          onPickModel={(id) =>
+            setSettings({ ...settings, provider: "openrouter", models: { ...settings.models, openrouter: id } })
+          }
           onClearChat={() => {
             chat.clear();
             setInput("");
@@ -465,6 +470,7 @@ function ChatDock({
   setInput,
   connected,
   modelLabel,
+  onPickModel,
   onClearChat,
 }: {
   chat: ReturnType<typeof useChat>;
@@ -472,6 +478,7 @@ function ChatDock({
   setInput: (v: string) => void;
   connected: boolean;
   modelLabel: string;
+  onPickModel: (id: string) => void;
   onClearChat: () => void;
 }) {
   const [open, setOpen] = useState(true);
@@ -540,7 +547,7 @@ function ChatDock({
           </div>
           <div className="mt-1.5 flex items-center justify-between gap-2 pl-1">
             <div className="flex min-w-0 items-center gap-1.5 text-[11px] text-white/40">
-              <span className="truncate rounded-full bg-white/[0.05] px-2.5 py-1 font-mono">{modelLabel}</span>
+              <ModelPicker value={modelLabel} onPick={onPickModel} />
               {messages.length > 0 && (
                 <>
                   <button
