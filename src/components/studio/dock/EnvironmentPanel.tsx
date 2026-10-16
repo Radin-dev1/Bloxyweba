@@ -118,7 +118,7 @@ export default function EnvironmentPanel({ env, onChange }: { env: Environment; 
                 key={k}
                 type="button"
                 aria-pressed={env.sky === k}
-                onClick={() => set({ sky: k })}
+                onClick={() => set({ sky: k, fog: { ...env.fog, color: null, near: SKY_PRESETS[k].fogNear, far: SKY_PRESETS[k].fogFar } })}
                 className={`overflow-hidden rounded-xl border text-left transition-all ${
                   env.sky === k ? "border-blox ring-2 ring-blox/40" : "border-white/10 hover:border-white/25"
                 }`}

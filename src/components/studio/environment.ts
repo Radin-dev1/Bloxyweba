@@ -48,6 +48,9 @@ type SkyInfo = {
   sun: string;
   sunIntensity: number;
   fog: string;
+  /** Fog distances that suit this sky (photo skies fade the ground out far away, like real haze). */
+  fogNear: number;
+  fogFar: number;
   /** Poly Haven asset the image comes from. */
   source?: string;
 };
@@ -55,37 +58,40 @@ type SkyInfo = {
 export const SKY_PRESETS: Record<SkyPreset, SkyInfo> = {
   studio: {
     label: "Studio",
-    hemiSky: "#d8e6f8", hemiGround: "#6d788b", hemi: 1.15, sun: "#f6f9ff", sunIntensity: 2, fog: "#92a2b0",
+    hemiSky: "#d8e6f8", hemiGround: "#6d788b", hemi: 1.15, sun: "#f6f9ff", sunIntensity: 2, fogNear: 90, fogFar: 750, fog: "#92a2b0",
   },
+  // Photo skies also light the scene (image-based lighting), so the extra lights stay low.
+  // Fog colors are each panorama's measured horizon color, so the ground fades into the sky.
   clear: {
     label: "Clear Day", image: "/env/sky/clear.jpg", thumb: "/env/thumbs/sky-clear.jpg", source: "kloofendal_43d_clear_puresky",
-    hemiSky: "#dbeeff", hemiGround: "#6f7b8a", hemi: 1.2, sun: "#fff7e8", sunIntensity: 2.4, fog: "#c2d6e6",
+    hemiSky: "#9fb6d4", hemiGround: "#5d5a50", hemi: 0.45, sun: "#fff4e0", sunIntensity: 2.2, fogNear: 150, fogFar: 2600, fog: "#b2becb",
   },
   cloudy: {
     label: "Cloudy", image: "/env/sky/cloudy.jpg", thumb: "/env/thumbs/sky-cloudy.jpg", source: "kloofendal_48d_partly_cloudy_puresky",
-    hemiSky: "#e3f0ff", hemiGround: "#6f8090", hemi: 1.25, sun: "#ffffff", sunIntensity: 2.2, fog: "#c9d8e6",
+    hemiSky: "#a7b4cf", hemiGround: "#5a5a52", hemi: 0.45, sun: "#fffaf0", sunIntensity: 2.0, fogNear: 150, fogFar: 2600, fog: "#9ca0af",
   },
   sunset: {
     label: "Sunset", image: "/env/sky/sunset.jpg", thumb: "/env/thumbs/sky-sunset.jpg", source: "qwantani_sunset_puresky",
-    hemiSky: "#ffd9b8", hemiGround: "#5a4a5e", hemi: 1.0, sun: "#ffb27a", sunIntensity: 2.0, fog: "#d9c3b0",
+    hemiSky: "#c9b9a8", hemiGround: "#4d4038", hemi: 0.4, sun: "#ffb27a", sunIntensity: 1.8, fogNear: 150, fogFar: 2600, fog: "#c7bdaa",
   },
   night: {
     label: "Night", image: "/env/sky/night.jpg", thumb: "/env/thumbs/sky-night.jpg", source: "qwantani_night_puresky",
-    hemiSky: "#5a74a8", hemiGround: "#1c2333", hemi: 0.7, sun: "#bcd0ff", sunIntensity: 0.8, fog: "#1d2533",
+    hemiSky: "#4a5a80", hemiGround: "#15181f", hemi: 0.35, sun: "#a9bdf0", sunIntensity: 0.5, fogNear: 100, fogFar: 1600, fog: "#23262b",
   },
   overcast: {
     label: "Overcast", image: "/env/sky/overcast.jpg", thumb: "/env/thumbs/sky-overcast.jpg", source: "kloofendal_overcast_puresky",
-    hemiSky: "#d6dbe2", hemiGround: "#6a717b", hemi: 1.3, sun: "#eef1f5", sunIntensity: 1.1, fog: "#b4bbc4",
+    hemiSky: "#a3abba", hemiGround: "#55565a", hemi: 0.55, sun: "#eef1f5", sunIntensity: 0.9, fogNear: 150, fogFar: 2600, fog: "#7f838c",
   },
 };
 
-type GroundInfo = { label: string; color: string; tile: number; image?: string; thumb?: string; source?: string };
+type GroundInfo = { label: string; color: string; tile: number; image?: string; normal?: string; thumb?: string; source?: string };
 
 const photo = (key: string, label: string, color: string, tile: number, source: string): GroundInfo => ({
   label,
   color,
   tile,
   image: `/env/ground/${key}.jpg`,
+  normal: `/env/normal/${key}.jpg`,
   thumb: `/env/thumbs/ground-${key}.jpg`,
   source,
 });

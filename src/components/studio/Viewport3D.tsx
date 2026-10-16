@@ -146,6 +146,43 @@ const FOG_FAR = 750;
 const BASEPLATE_STUDS_PER_TILE = 8;
 const BASEPLATE_TEXTURE_TRANSPARENCY = 0.8;
 
+/**
+ * Hides the repeat in photo grounds: the photo is blended with a slower, offset copy of
+ * itself and gently brightened/darkened by large-scale noise, so no grid of tiles shows.
+ */
+function breakUpTiling(material: THREE.MeshStandardMaterial) {
+  material.customProgramCacheKey = () => "bloxy-natural-ground";
+  material.onBeforeCompile = (shader) => {
+    shader.fragmentShader = shader.fragmentShader
+      .replace(
+        "#include <common>",
+        `#include <common>
+        float bloxyHash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+        float bloxyNoise(vec2 p) {
+          vec2 i = floor(p), f = fract(p);
+          vec2 u = f * f * (3.0 - 2.0 * f);
+          return mix(mix(bloxyHash(i), bloxyHash(i + vec2(1.0, 0.0)), u.x),
+                     mix(bloxyHash(i + vec2(0.0, 1.0)), bloxyHash(i + vec2(1.0, 1.0)), u.x), u.y);
+        }`,
+      )
+      .replace(
+        "#include <map_fragment>",
+        `#ifdef USE_MAP
+          vec2 bloxyUv = vMapUv;
+          // Noise in rotated domains, two octaves each, so the variation never lines up with the tiles.
+          mat2 bloxyR1 = mat2(0.83, -0.56, 0.56, 0.83);
+          mat2 bloxyR2 = mat2(0.36, 0.93, -0.93, 0.36);
+          vec4 bloxyA = texture2D(map, bloxyUv);
+          vec4 bloxyB = texture2D(map, bloxyR1 * bloxyUv * 0.37 + vec2(0.17, 0.43));
+          float bloxyN = 0.6 * bloxyNoise(bloxyR1 * bloxyUv * 0.07) + 0.4 * bloxyNoise(bloxyR2 * bloxyUv * 0.19 + 3.1);
+          vec4 bloxyTex = mix(bloxyA, bloxyB, smoothstep(0.25, 0.75, bloxyN));
+          float bloxyShade = 0.88 + 0.24 * (0.65 * bloxyNoise(bloxyR2 * bloxyUv * 0.017 + 7.0) + 0.35 * bloxyNoise(bloxyR1 * bloxyUv * 0.05 + 1.7));
+          diffuseColor *= vec4(bloxyTex.rgb * bloxyShade, bloxyTex.a);
+        #endif`,
+      );
+  };
+}
+
 function BaseplateMesh({
   part,
   showGrid,
@@ -163,8 +200,17 @@ function BaseplateMesh({
   const photoUrl = preset.image;
   const groundColor = env.groundColor ?? (photoUrl ? preset.color : env.ground === "roblox" ? `#${part.color}` : preset.color);
   const tint = photoUrl ? (env.groundColor ?? "#ffffff") : "#ffffff";
-  const base = useTexture(photoUrl ?? BASEPLATE_TEXTURE_URL);
+  const [base, normalBase] = useTexture([photoUrl ?? BASEPLATE_TEXTURE_URL, preset.normal ?? BASEPLATE_TEXTURE_URL]);
   const gl = useThree((s) => s.gl);
+  const normalTexture = useMemo(() => {
+    if (!photoUrl || !preset.normal) return null;
+    const t = normalBase.clone();
+    t.wrapS = t.wrapT = THREE.RepeatWrapping;
+    t.anisotropy = gl.capabilities.getMaxAnisotropy();
+    t.repeat.set(part.size[0] / env.tile, part.size[2] / env.tile);
+    t.needsUpdate = true;
+    return t;
+  }, [normalBase, photoUrl, preset.normal, gl, part.size, env.tile]);
   const topTexture = useMemo(() => {
     if (photoUrl) {
       const t = base.clone();
@@ -216,20 +262,24 @@ function BaseplateMesh({
     const top = new THREE.MeshStandardMaterial({
       map: topTexture,
       color: tint,
-      roughness: photoUrl ? 0.9 : 0.6,
+      normalMap: normalTexture,
+      normalScale: new THREE.Vector2(0.9, 0.9),
+      roughness: photoUrl ? 0.92 : 0.6,
       metalness: 0,
     });
+    if (photoUrl) breakUpTiling(top);
     // BoxGeometry material groups: 0=+X, 1=-X, 2=+Y (top), 3=-Y (bottom), 4=+Z, 5=-Z
     return [side, side, top, side, side, side];
-  }, [groundColor, topTexture, tint, photoUrl]);
+  }, [groundColor, topTexture, tint, photoUrl, normalTexture]);
 
   useEffect(
     () => () => {
       topTexture.dispose();
+      normalTexture?.dispose();
       materials[0].dispose();
       materials[2].dispose();
     },
-    [topTexture, materials],
+    [topTexture, normalTexture, materials],
   );
 
   const matrix = useMemo(() => matrixFor(part, new THREE.Matrix4()), [part]);
@@ -460,7 +510,18 @@ function PhotoSky({ url }: { url: string }) {
     t.needsUpdate = true;
     return t;
   }, [loaded]);
-  useEffect(() => () => texture.dispose(), [texture]);
+  // The sky also lights the scene (image-based lighting), like a real outdoor photo.
+  const get = useThree((s) => s.get);
+  useEffect(() => {
+    const { scene, invalidate } = get();
+    scene.environment = texture;
+    scene.environmentIntensity = 0.85;
+    invalidate();
+    return () => {
+      scene.environment = null;
+      texture.dispose();
+    };
+  }, [texture, get]);
   return <primitive attach="background" object={texture} />;
 }
 
