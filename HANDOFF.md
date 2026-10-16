@@ -21,6 +21,7 @@ A website (Next.js) with an AI agent that builds inside **Roblox Studio**. It's 
 | Generation (OpenRouter) | `src/lib/openrouter.ts`, `src/app/api/gen/{image,video,video/status,video/content,model3d,models}` |
 | Studio app UI | `src/components/studio/`: `StudioApp.tsx` (layout, tabs, chat dock), `Viewport3D.tsx` (R3F 3D workspace), `Explorer.tsx`, `Properties.tsx`, `NodeEditor.tsx` + `nodes/` (React Flow canvas) |
 | Landing page | `src/app/page.tsx`, `src/components/landing/` |
+| Roblox sign-in + bits | `src/lib/auth.ts` (OAuth + PKCE, signed cookie), `src/lib/bits.ts` (ledger, `resolveBilling`), routes `src/app/api/auth/*`, `src/app/api/bits/grant`, UI `src/components/studio/AccountPill.tsx` + `useAccount.ts`; chat on bits = provider `openrouter` ("Bloxy") in `src/lib/agent/openrouter.ts` |
 | Brand / logo | `brand/` (Spark Brick logo kit, `GUIDELINES.md`), components `BloxyMark` / `BloxyWordmark` / `BloxyLogo` in `src/components/landing/icons.tsx` |
 
 ## Current state (all pushed)
@@ -39,6 +40,8 @@ A website (Next.js) with an AI agent that builds inside **Roblox Studio**. It's 
 - **API keys:** user keys are entered in Settings and kept in the browser (Claude, Gemini, OpenRouter). The server can fall back to `ANTHROPIC_API_KEY`, `GEMINI_API_KEY` and `OPENROUTER_API_KEY`.
 
 ## Open items / next steps
+
+0. **Turn on bits in production:** set `OPENROUTER_API_KEY`, `ROBLOX_CLIENT_ID`, `ROBLOX_CLIENT_SECRET`, `AUTH_SECRET` and `ADMIN_ROBLOX_IDS` in Vercel, register the callback URL in the Roblox OAuth app, then redeploy. Untested against real Roblox and OpenRouter so far; tested with a fake key and a forged test session.
 
 1. **Vercel Redis:** the project has no Redis yet, so Studio pairing on production returns a 503 with setup steps. Fix: Vercel → Storage → Upstash Redis → connect → redeploy.
 2. **Roblox sky:** the owner will send Studio's sky. Put the six faces in `public/roblox/sky/` as `rt.png lf.png up.png dn.png bk.png ft.png`, set `HAS_SKYBOX = true` in `Viewport3D.tsx`, and check the face orientation visually.

@@ -310,13 +310,13 @@ export function SettingsDialog({
     <div className="fixed inset-0 z-50 grid place-items-center bg-black/70 p-4 backdrop-blur-md" onClick={onClose}>
       <div
         onClick={(e) => e.stopPropagation()}
-        className="w-full max-w-md rounded-[2rem] border border-white/10 bg-white/[0.03] p-1.5"
+        className="max-h-[92dvh] w-full max-w-md overflow-y-auto rounded-[2rem] border border-white/10 bg-white/[0.03] p-1.5 [scrollbar-width:none]"
       >
         <div className="rounded-[calc(2rem-0.375rem)] bg-[#0d0d10] p-6 shadow-[inset_0_1px_1px_rgba(255,255,255,0.07)]">
           <p className="text-[10px] font-medium tracking-[0.2em] text-white/40 uppercase">Settings</p>
           <h2 className="mt-1 font-display text-2xl font-bold tracking-tight">AI model</h2>
 
-          <div className="mt-6 grid grid-cols-3 gap-1 rounded-full bg-white/[0.04] p-1">
+          <div className="mt-6 grid grid-cols-4 gap-1 rounded-full bg-white/[0.04] p-1">
             {(Object.keys(PROVIDERS) as (keyof typeof PROVIDERS)[]).map((id) => (
               <button
                 key={id}
@@ -348,25 +348,37 @@ export function SettingsDialog({
             ))}
           </datalist>
 
-          <label className="mt-5 block text-sm text-white/55">{p.label} API key</label>
-          <input
-            type="password"
-            autoComplete="off"
-            placeholder={`${p.keyPrefix}…`}
-            value={draft.apiKeys[draft.provider]}
-            onChange={(e) => setDraft({ ...draft, apiKeys: { ...draft.apiKeys, [draft.provider]: e.target.value } })}
-            className={field}
-          />
-          <p className="mt-2 text-xs leading-relaxed text-white/35">
-            Saved only in this browser. Get one at{" "}
-            <a href={p.keyUrl} target="_blank" rel="noreferrer" className="text-blox-soft hover:underline">
-              {new URL(p.keyUrl).host}
-            </a>
-            . Leave empty to use the server&apos;s key, if it has one.
-          </p>
+          {draft.provider === "openrouter" ? (
+            <p className="mt-5 rounded-xl border border-blox/20 bg-blox/[0.07] px-3.5 py-3 text-xs leading-relaxed text-white/60">
+              <span className="font-medium text-white/85">Bloxy runs on bits.</span> Sign in with Roblox to get free
+              bits every day. Each message costs what the model really costs. Prefer your own key? Add an OpenRouter
+              key below and it&apos;s used instead, free.
+            </p>
+          ) : (
+            <>
+              <label className="mt-5 block text-sm text-white/55">{p.label} API key</label>
+              <input
+                type="password"
+                autoComplete="off"
+                placeholder={`${p.keyPrefix}…`}
+                value={draft.apiKeys[draft.provider]}
+                onChange={(e) =>
+                  setDraft({ ...draft, apiKeys: { ...draft.apiKeys, [draft.provider]: e.target.value } })
+                }
+                className={field}
+              />
+              <p className="mt-2 text-xs leading-relaxed text-white/35">
+                Saved only in this browser. Get one at{" "}
+                <a href={p.keyUrl} target="_blank" rel="noreferrer" className="text-blox-soft hover:underline">
+                  {new URL(p.keyUrl).host}
+                </a>
+                . Leave empty to use the server&apos;s key, if it has one.
+              </p>
+            </>
+          )}
 
           <div className="mt-6 border-t border-white/[0.07] pt-5">
-            <label className="block text-sm text-white/55">OpenRouter API key</label>
+            <label className="block text-sm text-white/55">Your OpenRouter API key (optional)</label>
             <input
               type="password"
               autoComplete="off"
@@ -376,7 +388,7 @@ export function SettingsDialog({
               className={field}
             />
             <p className="mt-2 text-xs leading-relaxed text-white/35">
-              Used by the Nodes tab to generate images, video and 3D models. Get one at{" "}
+              When set, Bloxy chat and the Nodes tab use this key instead of your bits. Get one at{" "}
               <a
                 href="https://openrouter.ai/keys"
                 target="_blank"

@@ -1,0 +1,40 @@
+"use client";
+
+import { useCallback, useEffect, useState } from "react";
+
+export type Account = {
+  user: { id: string; username: string; displayName: string; picture: string | null } | null;
+  bits: number | null;
+  daily: number;
+  bitsEnabled: boolean;
+  signInEnabled: boolean;
+  admin: boolean;
+};
+
+/** Signed-in Roblox user and their bits. Call refresh() after anything that spends bits. */
+export function useAccount() {
+  const [account, setAccount] = useState<Account | null>(null);
+
+  const refresh = useCallback(async () => {
+    try {
+      const res = await fetch("/api/auth/me", { cache: "no-store" });
+      if (res.ok) setAccount((await res.json()) as Account);
+    } catch {}
+  }, []);
+
+  useEffect(() => {
+    const first = setTimeout(() => void refresh(), 0);
+    const id = setInterval(() => void refresh(), 30_000);
+    return () => {
+      clearTimeout(first);
+      clearInterval(id);
+    };
+  }, [refresh]);
+
+  const signOut = useCallback(async () => {
+    await fetch("/api/auth/logout", { method: "POST" }).catch(() => {});
+    await refresh();
+  }, [refresh]);
+
+  return { account, refresh, signOut };
+}

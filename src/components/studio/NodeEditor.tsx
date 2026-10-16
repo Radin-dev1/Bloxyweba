@@ -22,6 +22,7 @@ import { ActionsContext, nodeTypes, type NodeActions } from "./nodes/nodeViews";
 import { CHECKS, KIND_STYLE, type Edge, type FlowNode, type NodeKind } from "./nodes/types";
 
 const STORAGE_KEY = "bloxy.workflow.v2";
+const WORKFLOW_NAME_KEY = "bloxy.workflow.name.v1";
 const MAX_SAVED_OUTPUT = 300_000; // big images/videos aren't kept in localStorage
 
 type Props = {
@@ -33,6 +34,7 @@ type Props = {
   /** Inserts a generated build into Studio (or the demo place); resolves to its path. */
   onInsertBuild: (build: BuildT) => Promise<string>;
   onNeedsKey: () => void;
+  onBackToWorkspace: () => void;
 };
 
 // ── Node factory & templates ──
@@ -190,13 +192,24 @@ function ToolButton({
   );
 }
 
-function Editor({ send, stop, busy, connected, openrouterKey, onInsertBuild, onNeedsKey }: Props) {
+function Editor({ send, stop, busy, connected, openrouterKey, onInsertBuild, onNeedsKey, onBackToWorkspace }: Props) {
   const initial = useMemo(() => loadSaved(), []);
   const [nodes, setNodes, onNodesChange] = useNodesState<FlowNode>(initial.nodes);
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>(initial.edges);
   const [mode, setMode] = useState<"select" | "hand">("select");
   const [menu, setMenu] = useState<"none" | "add" | "more">("none");
   const [runningAll, setRunningAll] = useState(false);
+  const [workflowName, setWorkflowName] = useState(() => {
+    try {
+      return localStorage.getItem(WORKFLOW_NAME_KEY) || "Untitled Workflow";
+    } catch {
+      return "Untitled Workflow";
+    }
+  });
+  const [assistantOpen, setAssistantOpen] = useState(false);
+  const [assistantInput, setAssistantInput] = useState("");
+  const [assistantReply, setAssistantReply] = useState("");
+  const [assistantBusy, setAssistantBusy] = useState(false);
   const cancelRef = useRef(false);
   const wrapper = useRef<HTMLDivElement>(null);
   const spawnCount = useRef(0);
@@ -213,8 +226,11 @@ function Editor({ send, stop, busy, connected, openrouterKey, onInsertBuild, onN
   useEffect(() => {
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify({ nodes: forStorage(nodes), edges }));
+      localStorage.setItem(WORKFLOW_NAME_KEY, workflowName);
     } catch {}
-  }, [nodes, edges]);
+  }, [nodes, edges, workflowName]);
+
+  const backToWorkspace = onBackToWorkspace;
 
   // V / H like design tools, when not typing.
   useEffect(() => {
@@ -238,15 +254,44 @@ function Editor({ send, stop, busy, connected, openrouterKey, onInsertBuild, onN
     [setEdges],
   );
 
-  const addNode = (kind: NodeKind) => {
+  // Where a right-click on empty canvas asked for a node (screen + flow coordinates).
+  const [contextAt, setContextAt] = useState<{ x: number; y: number; flow: { x: number; y: number } } | null>(null);
+
+  const addNode = (kind: NodeKind, at?: { x: number; y: number }) => {
     const rect = wrapper.current?.getBoundingClientRect();
     const k = spawnCount.current++ % 6;
-    const pos = screenToFlowPosition({
-      x: (rect ? rect.left + rect.width / 2 : window.innerWidth / 2) - 150 + k * 24,
-      y: (rect ? rect.top + rect.height / 2.6 : window.innerHeight / 2.6) + k * 24,
-    });
+    const pos =
+      at ??
+      screenToFlowPosition({
+        x: (rect ? rect.left + rect.width / 2 : window.innerWidth / 2) - 150 + k * 24,
+        y: (rect ? rect.top + rect.height / 2.6 : window.innerHeight / 2.6) + k * 24,
+      });
+    setContextAt(null);
     setNodes((ns) => [...ns.map((n) => ({ ...n, selected: false })), { ...newNode(kind, pos), selected: true }]);
     setMenu("none");
+  };
+
+  const loadTemplate = (template: (typeof TEMPLATES)[number]) => {
+    const graph = template.build();
+    setNodes(graph.nodes);
+    setEdges(graph.edges);
+    setMenu("none");
+    setTimeout(() => fitView({ padding: 0.25, duration: 500, maxZoom: 1 }), 50);
+  };
+
+  const askAssistant = async () => {
+    const prompt = assistantInput.trim();
+    if (!prompt || assistantBusy || busy) return;
+    setAssistantBusy(true);
+    setAssistantInput("");
+    try {
+      const result = await send(`You are helping edit the user's Roblox asset workflow. Current nodes: ${nodesRef.current.map((node) => `${node.type} (${node.id})`).join(", ") || "none"}. User request: ${prompt}`);
+      setAssistantReply(result.error ?? result.text ?? "No response received.");
+    } catch (error) {
+      setAssistantReply((error as Error).message);
+    } finally {
+      setAssistantBusy(false);
+    }
   };
 
   // ── Running nodes ──
@@ -358,6 +403,7 @@ function Editor({ send, stop, busy, connected, openrouterKey, onInsertBuild, onN
             model: node.data.model,
             prompt,
             image: images[0],
+            codeFormat: node.data.codeFormat ?? "blender",
           });
           patch(id, { build: r.build, inserted: undefined });
           break;
@@ -459,137 +505,118 @@ function Editor({ send, stop, busy, connected, openrouterKey, onInsertBuild, onN
           defaultEdgeOptions={{ type: "smoothstep" }}
           proOptions={{ hideAttribution: true }}
           className={`bloxy-flow ${mode === "hand" ? "cursor-grab" : ""}`}
+          onPaneContextMenu={(event) => {
+            event.preventDefault();
+            const rect = wrapper.current?.getBoundingClientRect();
+            setMenu("none");
+            setContextAt({
+              x: event.clientX - (rect?.left ?? 0),
+              y: event.clientY - (rect?.top ?? 0),
+              flow: screenToFlowPosition({ x: event.clientX, y: event.clientY }),
+            });
+          }}
+          onPaneClick={() => setContextAt(null)}
+          onMoveStart={() => setContextAt(null)}
         >
           <Background variant={BackgroundVariant.Dots} gap={22} size={1.2} color="#2a3040" />
-          <Controls position="top-left" showInteractive={false} className="!top-16" />
+          <Controls position="bottom-left" showInteractive={false} className="!bottom-5 !left-4 !top-auto" />
           {nodes.length > 0 && (
             <MiniMap
-              position="top-right"
+              position="bottom-left"
               pannable
               zoomable
-              maskColor="rgba(5,5,6,0.7)"
+              maskColor="rgba(5,5,6,0.72)"
               nodeColor={(n) => KIND_STYLE[n.type as NodeKind]?.color ?? "#2f7dff"}
-              className="!top-16"
+              className="!bottom-5 !left-[68px] !top-auto !m-0"
             />
           )}
         </ReactFlow>
 
         {nodes.length === 0 && (
-          <div className="pointer-events-none absolute inset-0 grid place-items-center">
-            <div className="text-center">
-              <p className="font-display text-xl font-bold tracking-tight text-white/80">Empty canvas</p>
-              <p className="mt-1.5 text-sm text-white/40">
-                Add a node from the toolbar below, or start from a template (⋯).
-              </p>
+          <div className="pointer-events-none absolute inset-x-4 top-[14%] bottom-24 z-[1] flex items-center justify-center overflow-y-auto py-6">
+            <div className="pointer-events-auto w-full max-w-[960px]">
+              <div className="mx-auto max-w-xl text-center">
+                <span className="mx-auto grid size-12 place-items-center rounded-2xl border border-blox/25 bg-blox/10 text-blox-soft shadow-[0_12px_40px_-18px_rgba(47,125,255,0.65)]"><KindIcon kind="more" className="size-6" /></span>
+                <p className="mt-4 text-[10px] font-semibold tracking-[0.2em] text-blox-soft uppercase">Bloxy workflow canvas</p>
+                <h2 className="mt-2 font-display text-2xl font-bold tracking-tight text-white sm:text-3xl">Start with one good idea.</h2>
+                <p className="mx-auto mt-2 max-w-lg text-sm leading-relaxed text-white/45">Drop in a prompt, bring a reference, or choose a small workflow to get moving. Connect the steps and run them when you’re ready.</p>
+                <div className="mt-5 flex flex-wrap justify-center gap-2">
+                  <button type="button" onClick={() => addNode("image")} className="flex items-center gap-2 rounded-xl border border-white/10 bg-[#191b20]/90 px-3.5 py-2.5 text-xs font-medium text-white/85 transition hover:border-blox/35 hover:bg-white/[0.07] focus-visible:ring-2 focus-visible:ring-blox-soft"><KindIcon kind="image" className="size-4" />Generate image</button>
+                  <button type="button" onClick={() => addNode("upload")} className="flex items-center gap-2 rounded-xl border border-white/10 bg-[#191b20]/90 px-3.5 py-2.5 text-xs font-medium text-white/85 transition hover:border-blox/35 hover:bg-white/[0.07] focus-visible:ring-2 focus-visible:ring-blox-soft"><KindIcon kind="upload" className="size-4" />Upload reference</button>
+                  <button type="button" onClick={() => addNode("text")} className="flex items-center gap-2 rounded-xl border border-white/10 bg-[#191b20]/90 px-3.5 py-2.5 text-xs font-medium text-white/85 transition hover:border-blox/35 hover:bg-white/[0.07] focus-visible:ring-2 focus-visible:ring-blox-soft"><KindIcon kind="text" className="size-4" />Start from text</button>
+                </div>
+              </div>
+              <div className="my-6 flex items-center gap-4 text-[11px] text-white/30"><span className="h-px flex-1 bg-white/[0.08]" /><span>or choose a starter</span><span className="h-px flex-1 bg-white/[0.08]" /></div>
+              <div className="grid gap-3 sm:grid-cols-3">
+                {TEMPLATES.map((template, index) => {
+                  const details = ["Turn a prompt into a 3D prop, then place it in the connected Studio.", "Create a visual concept, then spin it into a short trailer.", "Build an obby in steps and ask Bloxy to check the result."];
+                  const icon = ["model3d", "video", "studio"][index] as NodeKind;
+                  return <button key={template.label} type="button" onClick={() => loadTemplate(template)} className="group flex min-h-[124px] flex-col rounded-2xl border border-white/[0.09] bg-[#14161b]/90 p-4 text-left transition-all duration-200 hover:-translate-y-0.5 hover:border-white/20 hover:bg-[#1a1d24] focus-visible:ring-2 focus-visible:ring-blox-soft"><span className="grid size-8 place-items-center rounded-xl border border-white/[0.08] bg-white/[0.045] text-blox-soft transition group-hover:border-blox/30 group-hover:bg-blox/10"><KindIcon kind={icon} className="size-4" /></span><span className="mt-3 text-sm font-semibold text-white/90">{template.label}</span><span className="mt-1 text-[11px] leading-relaxed text-white/45">{details[index]}</span></button>;
+                })}
+              </div>
+              <p className="mt-4 text-center text-[10px] text-white/25">Right-click anywhere on the canvas to add a node at that spot.</p>
             </div>
           </div>
         )}
 
-        {/* Bottom toolbar */}
-        <div className="absolute bottom-5 left-1/2 z-10 flex -translate-x-1/2 items-center gap-2">
-          <div className="flex items-center gap-1 rounded-2xl border border-white/10 bg-[#141518]/95 p-1.5 shadow-[0_20px_60px_-20px_rgba(0,0,0,0.9)] backdrop-blur-xl">
-            <ToolButton active={mode === "select"} title="Select (V)" onClick={() => setMode("select")}>
-              <KindIcon kind="select" className="size-[19px]" />
-            </ToolButton>
-            <ToolButton active={mode === "hand"} title="Hand / pan (H)" onClick={() => setMode("hand")}>
-              <KindIcon kind="hand" className="size-[19px]" />
-            </ToolButton>
-            <ToolButton title="Note" onClick={() => addNode("note")}>
-              <KindIcon kind="note" className="size-[19px]" />
-            </ToolButton>
-            <span className="mx-1 h-6 w-px bg-white/10" />
-            {TOOLBAR_NODES.map((k) => (
-              <ToolButton key={k} title={KIND_STYLE[k].label} onClick={() => addNode(k)}>
-                <KindIcon kind={k} className="size-[19px]" />
-              </ToolButton>
+        <header className="pointer-events-none absolute inset-x-0 top-[4.25rem] z-10 flex items-center justify-between gap-3 px-4 sm:px-5">
+          <div className="pointer-events-auto flex items-center gap-1 rounded-2xl border border-white/10 bg-[#111318]/90 p-1 shadow-[0_12px_36px_-18px_rgba(0,0,0,0.75)] backdrop-blur-xl">
+            <button type="button" onClick={backToWorkspace} title="Back to workspace" className="grid size-8 place-items-center rounded-xl text-white/65 transition hover:bg-white/[0.08] hover:text-white focus-visible:ring-2 focus-visible:ring-blox-soft"><svg viewBox="0 0 24 24" className="size-4" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><path d="M19 12H5m7 7-7-7 7-7" /></svg></button>
+            <input aria-label="Workflow name" value={workflowName} onChange={(e) => setWorkflowName(e.target.value)} className="w-[min(34vw,185px)] bg-transparent px-2 text-xs font-medium text-white/90 outline-none focus-visible:ring-1 focus-visible:ring-blox-soft" />
+            <span title="Saved in this browser" className="mr-1 grid size-7 place-items-center rounded-lg text-white/40"><svg viewBox="0 0 24 24" className="size-4" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M5 18a4 4 0 0 1 .5-8 6.5 6.5 0 0 1 12.4-1.4A4.5 4.5 0 0 1 18 17h-2"/><path d="m9 15 3-3 3 3m-3-3v8"/></svg></span>
+          </div>
+          <div className="pointer-events-auto flex items-center gap-2 rounded-2xl border border-white/10 bg-[#111318]/90 p-1.5 shadow-[0_12px_36px_-18px_rgba(0,0,0,0.75)] backdrop-blur-xl">
+            <span className="hidden rounded-xl bg-white/[0.055] px-3 py-2 text-[11px] text-white/55 sm:inline-flex"><span className="mr-1.5 font-semibold tabular-nums text-white/85">{nodes.length}</span>{nodes.length === 1 ? "node" : "nodes"}</span>
+            <button type="button" onClick={() => { setAssistantOpen((open) => !open); setMenu("none"); }} aria-pressed={assistantOpen} className={`flex items-center gap-2 rounded-xl px-3 py-2 text-xs font-medium transition focus-visible:ring-2 focus-visible:ring-blox-soft ${assistantOpen ? "bg-blox/20 text-blox-soft" : "text-white/65 hover:bg-white/[0.07] hover:text-white"}`}><KindIcon kind="studio" className="size-4" /><span className="hidden sm:inline">Workflow assistant</span></button>
+          </div>
+        </header>
+
+        {assistantOpen && <aside className="absolute top-[4.25rem] bottom-0 right-0 z-20 rounded-tl-2xl flex w-[min(360px,100vw)] flex-col border-l border-white/10 bg-[#101116]/95 shadow-[-24px_0_60px_-28px_rgba(0,0,0,0.9)] backdrop-blur-2xl">
+          <div className="flex h-14 shrink-0 items-center justify-between border-b border-white/[0.08] px-4"><div><p className="text-sm font-semibold text-white">Workflow assistant</p><p className="text-[10px] text-white/40">Ask Bloxy to explain or plan your graph</p></div><button type="button" onClick={() => setAssistantOpen(false)} aria-label="Close workflow assistant" className="grid size-8 place-items-center rounded-lg text-white/45 transition hover:bg-white/[0.08] hover:text-white">×</button></div>
+          <div className="flex-1 overflow-y-auto px-4 py-5">{assistantReply ? <div className="rounded-2xl border border-white/[0.08] bg-white/[0.035] p-4 text-sm leading-relaxed text-white/80 whitespace-pre-wrap">{assistantReply}</div> : <div className="grid h-full place-items-center text-center"><div><span className="mx-auto grid size-12 place-items-center rounded-2xl border border-blox/20 bg-blox/10 text-blox-soft"><KindIcon kind="studio" className="size-5" /></span><p className="mt-3 text-sm font-medium text-white/80">What should we build next?</p><p className="mt-1 max-w-[250px] text-xs leading-relaxed text-white/40">Ask for a workflow idea, help debugging a graph, or a plan for your next Roblox asset.</p><button type="button" onClick={() => setAssistantInput("Explain what this workflow does and where it could be improved.")} className="mt-4 rounded-full border border-white/10 px-3 py-2 text-[10px] text-white/55 transition hover:bg-white/[0.06] hover:text-white">Explain this workflow</button></div></div>}</div>
+          <form onSubmit={(event) => { event.preventDefault(); void askAssistant(); }} className="shrink-0 border-t border-white/[0.08] p-3"><textarea value={assistantInput} onChange={(event) => setAssistantInput(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); void askAssistant(); } }} rows={3} placeholder="Ask about this workflow…" className="w-full resize-none rounded-xl border border-white/10 bg-black/30 p-3 text-xs leading-relaxed text-white outline-none placeholder:text-white/30 focus:border-blox/45" /><div className="mt-2 flex items-center justify-between"><span className="text-[10px] text-white/35">Enter to send · Shift+Enter for newline</span><button type="submit" disabled={!assistantInput.trim() || assistantBusy || busy} className="rounded-lg bg-blox px-3 py-2 text-xs font-medium text-white transition hover:bg-blox/85 disabled:opacity-40">{assistantBusy || busy ? "Thinking…" : "Ask Bloxy →"}</button></div></form>
+        </aside>}
+
+        {contextAt && (
+          <div
+            className="absolute z-30 w-52 rounded-2xl border border-white/10 bg-[#141518]/95 p-1.5 shadow-2xl backdrop-blur-xl"
+            style={{
+              left: Math.min(contextAt.x, (wrapper.current?.clientWidth ?? 9999) - 216),
+              top: Math.min(contextAt.y, (wrapper.current?.clientHeight ?? 9999) - 340),
+            }}
+            onContextMenu={(e) => e.preventDefault()}
+          >
+            <p className="px-3 pt-1.5 pb-1 text-[10px] tracking-[0.18em] text-white/35 uppercase">Add node here</p>
+            {(["text", "image", "video", "model3d", "upload", "studio", "check", "note"] as NodeKind[]).map((kind) => (
+              <button
+                key={kind}
+                onClick={() => addNode(kind, contextAt.flow)}
+                className="flex w-full items-center gap-2.5 rounded-xl px-3 py-1.5 text-left text-sm text-white/75 hover:bg-white/[0.07] hover:text-white"
+              >
+                <span style={{ color: KIND_STYLE[kind].color }}>
+                  <KindIcon kind={kind} className="size-4" />
+                </span>
+                {KIND_STYLE[kind].label}
+              </button>
             ))}
-            <div className="relative">
-              <ToolButton title="Templates & more" onClick={() => setMenu((m) => (m === "more" ? "none" : "more"))}>
-                <KindIcon kind="more" className="size-[19px]" />
-              </ToolButton>
-              {menu === "more" && (
-                <div className="absolute bottom-full left-1/2 mb-3 w-52 -translate-x-1/2 rounded-2xl border border-white/10 bg-[#141518]/95 p-1.5 shadow-2xl backdrop-blur-xl">
-                  <p className="px-3 pt-1.5 pb-1 text-[10px] tracking-[0.18em] text-white/35 uppercase">Templates</p>
-                  {TEMPLATES.map((t) => (
-                    <button
-                      key={t.label}
-                      onClick={() => {
-                        const g = t.build();
-                        setNodes(g.nodes);
-                        setEdges(g.edges);
-                        setMenu("none");
-                        setTimeout(() => fitView({ padding: 0.25, duration: 500, maxZoom: 1 }), 50);
-                      }}
-                      className="block w-full rounded-xl px-3 py-2 text-left text-sm text-white/75 hover:bg-white/[0.07] hover:text-white"
-                    >
-                      {t.label}
-                    </button>
-                  ))}
-                  <div className="my-1 h-px bg-white/10" />
-                  <button
-                    onClick={() => {
-                      setNodes([]);
-                      setEdges([]);
-                      setMenu("none");
-                    }}
-                    className="block w-full rounded-xl px-3 py-2 text-left text-sm text-red-300/80 hover:bg-red-500/10"
-                  >
-                    Clear canvas
-                  </button>
-                </div>
-              )}
-            </div>
           </div>
+        )}
 
-          <div className="relative">
-            <button
-              onClick={() => setMenu((m) => (m === "add" ? "none" : "add"))}
-              title="Add node"
-              aria-label="Add node"
-              className="grid size-[52px] place-items-center rounded-2xl border border-white/10 bg-[#141518]/95 text-white/80 backdrop-blur-xl hover:text-white"
-            >
-              <KindIcon kind="plus" className="size-5" />
-            </button>
-            {menu === "add" && (
-              <div className="absolute right-0 bottom-full mb-3 w-56 rounded-2xl border border-white/10 bg-[#141518]/95 p-1.5 shadow-2xl backdrop-blur-xl">
-                {(["text", "image", "video", "model3d", "upload", "studio", "check", "note"] as NodeKind[]).map((k) => (
-                  <button
-                    key={k}
-                    onClick={() => addNode(k)}
-                    className="flex w-full items-center gap-2.5 rounded-xl px-3 py-2 text-left text-sm text-white/75 hover:bg-white/[0.07] hover:text-white"
-                  >
-                    <span style={{ color: KIND_STYLE[k].color }}>
-                      <KindIcon kind={k} className="size-4" />
-                    </span>
-                    {KIND_STYLE[k].label}
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
-
-          {runningAll ? (
-            <button
-              onClick={() => {
-                cancelRef.current = true;
-                stop();
-              }}
-              className="h-[52px] rounded-2xl bg-white/10 px-5 text-sm font-medium text-white hover:bg-white/15"
-            >
-              Stop
-            </button>
-          ) : (
-            <button
-              onClick={() => void runAll()}
-              disabled={busy || nodes.length === 0}
-              className="flex h-[52px] items-center gap-2 rounded-2xl bg-blox px-5 text-sm font-semibold text-white shadow-[inset_0_1px_1px_rgba(255,255,255,0.3),0_10px_30px_-10px_rgba(47,125,255,0.9)] disabled:opacity-40 disabled:shadow-none"
-            >
-              <svg viewBox="0 0 24 24" className="size-3.5" fill="currentColor">
-                <path d="M8 5.5v13l11-6.5-11-6.5Z" />
-              </svg>
-              Run all
-            </button>
-          )}
+        {/* Bottom toolbar */}
+        <div className="absolute bottom-5 left-1/2 z-10 -translate-x-1/2">
+        {/* Menus live outside the scrolling bar so overflow doesn't clip them. */}
+        {menu === "add" && <div className="absolute bottom-full left-1/2 mb-3 w-56 -translate-x-1/2 z-20 rounded-2xl border border-white/10 bg-[#141518]/95 p-1.5 shadow-2xl backdrop-blur-xl">{(["text", "image", "video", "model3d", "upload", "studio", "check", "note"] as NodeKind[]).map((kind) => <button key={kind} onClick={() => addNode(kind)} className="flex w-full items-center gap-2.5 rounded-xl px-3 py-2 text-left text-sm text-white/75 hover:bg-white/[0.07] hover:text-white"><span style={{ color: KIND_STYLE[kind].color }}><KindIcon kind={kind} className="size-4" /></span>{KIND_STYLE[kind].label}</button>)}</div>}
+        {menu === "more" && <div className="absolute bottom-full left-1/2 mb-3 w-56 -translate-x-1/2 z-20 rounded-2xl border border-white/10 bg-[#141518]/95 p-1.5 shadow-2xl backdrop-blur-xl"><p className="px-3 pt-1.5 pb-1 text-[10px] tracking-[0.18em] text-white/35 uppercase">Templates</p>{TEMPLATES.map((template) => <button key={template.label} onClick={() => loadTemplate(template)} className="block w-full rounded-xl px-3 py-2 text-left text-sm text-white/75 hover:bg-white/[0.07] hover:text-white">{template.label}</button>)}<div className="my-1 h-px bg-white/10"/><button onClick={() => { setNodes([]); setEdges([]); setMenu("none"); }} className="block w-full rounded-xl px-3 py-2 text-left text-sm text-red-300/80 hover:bg-red-500/10">Clear canvas</button></div>}
+        <div className="flex max-w-[calc(100vw-100px)] items-center gap-1 overflow-x-auto rounded-[1.35rem] border border-white/10 bg-[#14161b]/95 p-1.5 shadow-[0_20px_60px_-20px_rgba(0,0,0,0.9)] backdrop-blur-2xl [scrollbar-width:none]">
+          <ToolButton active={mode === "select"} title="Select (V)" onClick={() => setMode("select")}><KindIcon kind="select" className="size-[19px]" /></ToolButton>
+          <ToolButton active={mode === "hand"} title="Hand / pan (H)" onClick={() => setMode("hand")}><KindIcon kind="hand" className="size-[19px]" /></ToolButton>
+          <div className="relative"><ToolButton title="Notes and comments" onClick={() => setMenu((m) => m === "add" ? "none" : "add")}><KindIcon kind="note" className="size-[19px]" /></ToolButton></div>
+          <span className="mx-1 h-6 w-px shrink-0 bg-white/10" />
+          {TOOLBAR_NODES.map((kind) => <ToolButton key={kind} title={`Add ${KIND_STYLE[kind].label}`} onClick={() => addNode(kind)}><KindIcon kind={kind} className="size-[19px]" /></ToolButton>)}
+          <div className="relative"><ToolButton title="Templates and canvas options" onClick={() => setMenu((m) => m === "more" ? "none" : "more")}><KindIcon kind="more" className="size-[19px]" /></ToolButton></div>
+          <button type="button" title="Add node" aria-label="Add node" onClick={() => setMenu((m) => m === "add" ? "none" : "add")} className="ml-0.5 grid size-10 shrink-0 place-items-center rounded-xl border border-white/10 bg-white/[0.035] text-white/80 transition hover:border-blox/30 hover:bg-blox/10 hover:text-white focus-visible:ring-2 focus-visible:ring-blox-soft"><KindIcon kind="plus" className="size-5" /></button>
+          {runningAll ? <button onClick={() => { cancelRef.current = true; stop(); }} className="h-10 shrink-0 rounded-xl bg-white/10 px-3 text-xs font-medium text-white hover:bg-white/15">Stop</button> : <button onClick={() => void runAll()} disabled={busy || nodes.length === 0} className="flex h-10 shrink-0 items-center gap-2 rounded-xl bg-blox px-3.5 text-xs font-semibold text-white shadow-[0_10px_30px_-10px_rgba(47,125,255,0.75)] transition hover:bg-blox/90 disabled:opacity-40"><svg viewBox="0 0 24 24" className="size-3" fill="currentColor"><path d="M8 5.5v13l11-6.5-11-6.5Z" /></svg>Run all</button>}
+        </div>
         </div>
       </div>
     </ActionsContext.Provider>

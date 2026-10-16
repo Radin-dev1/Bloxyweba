@@ -1,12 +1,13 @@
 import { z } from "zod";
-import { makeStudioExecutor, PROVIDERS, runAgent, type AgentEvent } from "@/lib/agent";
+import { makeStudioExecutor, PROVIDERS, runAgent, type AgentEvent, type StepBilling } from "@/lib/agent";
+import { BIT_ESTIMATES, refund, reserve, resolveBilling, settle } from "@/lib/bits";
 
 // Vercel Hobby allows at most 300s per function; long agent runs continue in the next message.
 export const maxDuration = 300;
 
 const Body = z.object({
   sessionId: z.string().min(1),
-  provider: z.enum(["claude", "gemini"]),
+  provider: z.enum(["openrouter", "claude", "gemini"]),
   model: z.string().min(1).max(100),
   apiKey: z.string().max(500).optional(),
   messages: z
@@ -21,13 +22,39 @@ export async function POST(request: Request) {
   if (!parsed.success) return Response.json({ error: "bad_request" }, { status: 400 });
   const { sessionId, provider, model, messages } = parsed.data;
 
-  // A key typed by the user wins; the server's own key (if configured) is the fallback.
-  const apiKey = parsed.data.apiKey?.trim() || process.env[PROVIDERS[provider].envKey] || "";
-  if (!apiKey) {
-    return Response.json(
-      { error: `No ${PROVIDERS[provider].label} API key. Add yours in Settings.` },
-      { status: 400 },
-    );
+  let apiKey: string;
+  let billing: StepBilling | undefined;
+  if (provider === "openrouter") {
+    // Bloxy: the user's own OpenRouter key is free; otherwise the owner's key on bits.
+    const b = await resolveBilling(parsed.data.apiKey);
+    if (!b.ok) return b.response;
+    apiKey = b.key;
+    if (b.charge) {
+      const userId = b.user.id;
+      let held = 0;
+      billing = {
+        beforeStep: async () => {
+          if (!(await reserve(userId, BIT_ESTIMATES.chatStep))) return false;
+          held = BIT_ESTIMATES.chatStep;
+          return true;
+        },
+        afterStep: async (cost, failed) => {
+          if (!held) return;
+          if (failed) await refund(userId, held);
+          else await settle(userId, held, cost);
+          held = 0;
+        },
+      };
+    }
+  } else {
+    // A key typed by the user wins; the server's own key (if configured) is the fallback.
+    apiKey = parsed.data.apiKey?.trim() || process.env[PROVIDERS[provider].envKey] || "";
+    if (!apiKey) {
+      return Response.json(
+        { error: `No ${PROVIDERS[provider].label} API key. Add yours in Settings.` },
+        { status: 400 },
+      );
+    }
   }
 
   // Drop empty turns (e.g. an assistant reply that was only tool calls) so providers don't reject them.
@@ -48,6 +75,7 @@ export async function POST(request: Request) {
           emit,
           signal: request.signal,
           executeTool: makeStudioExecutor(sessionId, emit),
+          billing,
         });
       } catch (err) {
         if (!request.signal.aborted) emit({ type: "error", message: describeError(err) });

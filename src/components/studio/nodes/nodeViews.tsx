@@ -39,13 +39,14 @@ export const ActionsContext = createContext<NodeActions>({
 });
 
 // Model id suggestions per kind, fetched once from OpenRouter's public lists.
-const modelCache: Partial<Record<"text" | "image" | "video", Promise<string[]>>> = {};
-function useModels(kind: "text" | "image" | "video") {
-  const [models, setModels] = useState<string[]>([]);
+type ModelOption = { id: string; name: string };
+const modelCache: Partial<Record<"text" | "image" | "video" | "model3d", Promise<ModelOption[]>>> = {};
+function useModels(kind: "text" | "image" | "video" | "model3d") {
+  const [models, setModels] = useState<ModelOption[]>([]);
   useEffect(() => {
     modelCache[kind] ??= fetch(`/api/gen/models?kind=${kind}`)
       .then((r) => r.json())
-      .then((d: { models?: string[] }) => d.models ?? [])
+      .then((d: { models?: ModelOption[] }) => d.models ?? [])
       .catch(() => []);
     let alive = true;
     void modelCache[kind]!.then((m) => alive && setModels(m));
@@ -171,23 +172,25 @@ function PromptField({
   );
 }
 
-function ModelField({ id, value, kind }: { id: string; value: string; kind: "text" | "image" | "video" }) {
+function ModelField({ id, value, kind }: { id: string; value: string; kind: "text" | "image" | "video" | "model3d" }) {
   const { updateNodeData } = useReactFlow();
   const models = useModels(kind);
   const listId = `models-${kind}`;
   return (
     <div className="relative mt-2">
       <input
+        aria-label="Model ID"
         value={value}
         list={listId}
         onChange={(e) => updateNodeData(id, { model: e.target.value })}
         className="nodrag w-full rounded-lg border border-white/[0.07] bg-black/30 px-2.5 py-1.5 font-mono text-[11px] text-white/70 outline-none focus:border-white/25"
       />
       <datalist id={listId}>
-        {models.map((m) => (
-          <option key={m} value={m} />
+        {models.map((model) => (
+          <option key={model.id} value={model.id} label={model.name} />
         ))}
       </datalist>
+      {kind === "model3d" && <p className="mt-1 text-[9px] text-white/30">OpenRouter coding models · manually editable</p>}
     </div>
   );
 }
@@ -363,6 +366,9 @@ function VideoNode({ id, data, selected }: NodeProps<FlowNode & { type: "video";
 
 function Model3DNode({ id, data, selected }: NodeProps<FlowNode & { type: "model3d"; data: Model3DData }>) {
   const { insertBuild, connected } = useContext(ActionsContext);
+  const { updateNodeData } = useReactFlow();
+  const codeFormat = data.codeFormat ?? "blender";
+  const script = data.build?.blender_script ?? "";
   return (
     <Shell
       kind="model3d"
@@ -384,19 +390,26 @@ function Model3DNode({ id, data, selected }: NodeProps<FlowNode & { type: "model
         </>
       }
     >
-      {data.build && (
+      <div className="mb-2 flex items-center gap-1 rounded-lg border border-white/[0.07] bg-black/25 p-1">
+        {(["roblox", "blender"] as const).map((format) => <button key={format} type="button" aria-pressed={codeFormat === format} onClick={() => updateNodeData(id, { codeFormat: format, model: format === "blender" ? "google/gemini-3.8-flash" : "anthropic/claude-opus-5.5", build: undefined, error: undefined, status: "idle" })} className={`flex-1 rounded-md px-2 py-1.5 text-[10px] font-medium capitalize transition-colors ${codeFormat === format ? "bg-white/[0.12] text-white" : "text-white/45 hover:bg-white/[0.06] hover:text-white/80"}`}>{format === "roblox" ? "Roblox parts" : "Blender Python"}</button>)}
+      </div>
+      {data.build && codeFormat === "roblox" && (
         <div className="nodrag nowheel nopan mb-2 h-48 overflow-hidden rounded-xl">
           <ModelPreview build={data.build} />
         </div>
       )}
+      {data.build && codeFormat === "blender" && script && (
+        <div className="nodrag nowheel nopan mb-2 max-h-48 overflow-auto rounded-xl border border-white/[0.07] bg-black/35 p-3"><pre className="whitespace-pre-wrap break-words font-mono text-[10px] leading-relaxed text-white/70">{data.build.blender_script}</pre><button type="button" onClick={() => void navigator.clipboard?.writeText(script)} className="mt-2 rounded-md border border-white/10 px-2 py-1 text-[10px] text-white/65 hover:bg-white/[0.07]">Copy Blender code</button></div>
+      )}
       {data.build && (
         <p className="mb-2 text-[11px] text-white/45">
-          <span className="font-mono text-white/70">{data.build.name}</span> · {data.build.parts.length} parts
+          <span className="font-mono text-white/70">{data.build.name}</span>{codeFormat === "blender" ? " · Blender Python" : ` · ${data.build.parts.length} parts`}
           {data.inserted && <span className="text-signal"> · inserted at {data.inserted}</span>}
         </p>
       )}
-      <PromptField id={id} value={data.prompt} placeholder="Describe the object… e.g. a low-poly red pickup truck" />
-      <ModelField id={id} value={data.model} kind="text" />
+      <PromptField id={id} value={data.prompt} placeholder="Describe the 3D object… e.g. a low-poly red pickup truck" />
+      <p className="mt-1.5 text-[10px] leading-relaxed text-white/35">{codeFormat === "blender" ? "Generates a Blender 5.0 procedural bpy script using a related 3DCode training example as additional code context." : "Generates Roblox part geometry as structured code. Pick an OpenRouter coding model, then insert the validated result into the scene."}</p>
+      <ModelField id={id} value={data.model} kind="model3d" />
       <ErrorLine error={data.error} />
     </Shell>
   );

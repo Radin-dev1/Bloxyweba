@@ -15,8 +15,10 @@ import type { BuildT } from "@/lib/openrouter";
 import { buildToParts } from "./nodes/ModelPreview";
 import { applyEdit, toStudioProperties, type PartEdit } from "./sceneMath";
 import { useChat } from "./useChat";
+import AccountPill from "./AccountPill";
+import { useAccount } from "./useAccount";
 import { useScene, type Scene } from "./useScene";
-import type { Tool } from "./Viewport3D";
+import { DEFAULT_VIEWPORT_OPTIONS, type Tool, type ViewportOptions } from "./Viewport3D";
 
 const Viewport3D = dynamic(() => import("./Viewport3D"), { ssr: false });
 const NodeEditor = dynamic(() => import("./NodeEditor"), { ssr: false });
@@ -25,6 +27,37 @@ const EASE = "ease-[var(--ease-spring)]";
 const PLUGIN_VERSION = "0.3.0";
 
 type Tab = "workspace" | "nodes";
+type WorkspacePanel = "explorer" | "properties" | "view" | "connect" | null;
+
+const RAIL_ITEMS: { id: Exclude<WorkspacePanel, null>; label: string; icon: React.ReactNode }[] = [
+  { id: "explorer", label: "Explorer", icon: <path d="M4 5h16M4 10h16M4 15h10M4 20h7" /> },
+  { id: "properties", label: "Properties", icon: <><rect x="4" y="3" width="16" height="18" rx="2" /><path d="M8 8h8M8 12h8M8 16h5" /></> },
+  { id: "view", label: "Viewport settings", icon: <><circle cx="12" cy="12" r="8.5" /><path d="M12 3.5v17M3.5 12h17M6 6l12 12M18 6 6 18" /></> },
+  { id: "connect", label: "Connect Studio", icon: <><path d="M8 12h8M12 8v8" /><circle cx="12" cy="12" r="9" /></> },
+];
+
+function RailIcon({ children }: { children: React.ReactNode }) {
+  return <svg viewBox="0 0 24 24" className="size-[18px]" fill="none" stroke="currentColor" strokeWidth={1.6} strokeLinecap="round" strokeLinejoin="round">{children}</svg>;
+}
+
+function OptionToggle({
+  label,
+  description,
+  checked,
+  onChange,
+}: {
+  label: string;
+  description: string;
+  checked: boolean;
+  onChange: (value: boolean) => void;
+}) {
+  return (
+    <div className="flex items-center justify-between gap-3 rounded-xl px-2 py-2.5 transition-colors hover:bg-white/[0.035]">
+      <div className="min-w-0"><p className="text-xs font-medium text-white/85">{label}</p><p className="mt-0.5 text-[10px] leading-snug text-white/40">{description}</p></div>
+      <button type="button" role="switch" aria-checked={checked} aria-label={label} onClick={() => onChange(!checked)} className={`relative h-[22px] w-10 shrink-0 rounded-full border transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blox-soft ${checked ? "border-blox/50 bg-blox/75" : "border-white/10 bg-white/[0.08]"}`}><span className={`absolute top-[3px] size-3.5 rounded-full bg-white shadow transition-transform ${checked ? "translate-x-[19px]" : "translate-x-[3px]"}`} /></button>
+    </div>
+  );
+}
 
 /** Prompt handed over from the landing page (/studio?prompt=…). */
 function initialPrompt() {
@@ -44,15 +77,19 @@ export default function StudioApp() {
   const [settings, setSettings] = useSettings();
   const [showSettings, setShowSettings] = useState(false);
   const [tab, setTab] = useState<Tab>("workspace");
+  const [workspacePanel, setWorkspacePanel] = useState<WorkspacePanel>(null);
+  const [viewportOptions, setViewportOptions] = useState<ViewportOptions>(DEFAULT_VIEWPORT_OPTIONS);
   const connected = !!status?.connected;
 
   const sceneApi = useScene(sessionId, connected);
   const { refresh: refreshScene } = sceneApi;
+  const { account, refresh: refreshAccount, signOut } = useAccount();
   const onTurnEnd = useCallback(
     (r: { mutated: boolean }) => {
       if (r.mutated) void refreshScene();
+      void refreshAccount(); // the turn may have spent bits
     },
-    [refreshScene],
+    [refreshScene, refreshAccount],
   );
   const chat = useChat({ sessionId, settings, onTurnEnd, onNeedsKey: () => setShowSettings(true) });
 
@@ -158,6 +195,7 @@ export default function StudioApp() {
             fitKey={fitKey}
             tool={tool}
             editable={editable}
+            options={viewportOptions}
             onEdit={onEdit}
           />
         ) : (
@@ -170,6 +208,7 @@ export default function StudioApp() {
               openrouterKey={settings.openrouterKey}
               onInsertBuild={insertBuild}
               onNeedsKey={() => setShowSettings(true)}
+              onBackToWorkspace={() => setTab("workspace")}
             />
           </div>
         )}
@@ -189,7 +228,10 @@ export default function StudioApp() {
           {(["workspace", "nodes"] as const).map((t) => (
             <button
               key={t}
-              onClick={() => setTab(t)}
+              onClick={() => {
+                setTab(t);
+                setWorkspacePanel(null);
+              }}
               className={`rounded-full px-4 py-1.5 text-sm transition-all duration-500 ${EASE} ${
                 tab === t
                   ? "bg-white/[0.12] text-white shadow-[inset_0_1px_1px_rgba(255,255,255,0.1)]"
@@ -202,6 +244,7 @@ export default function StudioApp() {
         </div>
 
         <div className="pointer-events-auto flex items-center gap-2">
+          <AccountPill account={account} onSignOut={() => void signOut()} onChanged={() => void refreshAccount()} />
           <span className="rounded-full bg-[#111318]/85 backdrop-blur-xl">
             <ConnectionPill status={status} />
           </span>
@@ -229,71 +272,29 @@ export default function StudioApp() {
             refreshing={sceneApi.loading}
           />
 
-          {/* ── Left: place + Explorer ── */}
-          <aside className="absolute top-[4.5rem] bottom-[10.5rem] left-4 z-10 hidden w-[272px] flex-col gap-3 md:flex xl:bottom-4">
-            {connected ? (
-              <PlaceCard
-                placeName={status?.studioInfo?.placeName ?? "Your place"}
-                count={sceneApi.scene?.parts.length ?? 0}
-                truncated={!!sceneApi.scene?.truncated}
-                loading={sceneApi.loading}
-                error={sceneApi.error}
-                outdated={outdated}
-                onNewCode={newPairCode}
-              />
-            ) : (
-              <div className="max-h-[55%] shrink-0 overflow-y-auto rounded-[1.6rem] [scrollbar-width:none]">
-                <PairPanel status={status} onNewCode={newPairCode} error={sessionError} />
+          <nav aria-label="Workspace tools" className="absolute top-1/2 left-3 z-20 flex -translate-y-1/2 flex-col gap-1 rounded-[1.35rem] border border-white/15 bg-[#171a21]/78 p-1.5 shadow-[0_18px_50px_-24px_rgba(10,18,34,0.8),inset_0_1px_0_rgba(255,255,255,0.08)] backdrop-blur-2xl">
+            {RAIL_ITEMS.map((item) => (
+              <button key={item.id} type="button" title={item.label} aria-label={item.label} aria-pressed={workspacePanel === item.id} onClick={() => setWorkspacePanel((current) => current === item.id ? null : item.id)} className={`group relative grid size-10 place-items-center rounded-xl outline-none transition-all duration-200 focus-visible:ring-2 focus-visible:ring-blox-soft active:scale-95 ${workspacePanel === item.id ? "bg-blox text-white shadow-[0_6px_18px_-8px_rgba(47,125,255,0.9)]" : "text-white/65 hover:bg-white/10 hover:text-white"}`}>
+                <RailIcon>{item.icon}</RailIcon>
+                <span className="pointer-events-none absolute left-[calc(100%+10px)] z-50 whitespace-nowrap rounded-lg border border-white/10 bg-[#101217]/95 px-2.5 py-1.5 text-[11px] font-medium text-white opacity-0 shadow-xl transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100">{item.label}</span>
+              </button>
+            ))}
+          </nav>
+
+          {workspacePanel && (
+            <aside className="absolute top-[5.1rem] bottom-[7.2rem] left-[4.4rem] z-20 flex w-[min(320px,calc(100vw-5.5rem))] flex-col overflow-hidden rounded-[1.35rem] border border-white/12 bg-[#101217]/90 shadow-[0_28px_70px_-28px_rgba(4,9,20,0.9)] backdrop-blur-2xl">
+              <div className="flex h-12 shrink-0 items-center justify-between border-b border-white/[0.08] px-4">
+                <div className="flex min-w-0 items-center gap-2.5"><span className="grid size-7 place-items-center rounded-lg bg-white/[0.07] text-blox-soft"><RailIcon>{RAIL_ITEMS.find((item) => item.id === workspacePanel)?.icon}</RailIcon></span><div className="min-w-0"><h2 className="truncate text-[13px] font-semibold text-white">{workspacePanel === "connect" ? "Studio connection" : workspacePanel === "view" ? "Viewport settings" : workspacePanel[0].toUpperCase() + workspacePanel.slice(1)}</h2>{workspacePanel === "connect" && <p className="text-[10px] text-white/40">{connected ? "Connected to Roblox Studio" : "Local demo workspace"}</p>}</div></div>
+                <button type="button" aria-label="Close panel" onClick={() => setWorkspacePanel(null)} className="grid size-8 place-items-center rounded-lg text-white/45 transition-colors hover:bg-white/[0.08] hover:text-white focus-visible:ring-2 focus-visible:ring-blox-soft">×</button>
               </div>
-            )}
-            <div className={`${PANEL} flex min-h-[180px] flex-1 flex-col overflow-hidden`}>
-              {!connected && (
-                <p className="mx-3 mt-3 -mb-1 w-max rounded-full bg-amber-300/15 px-2 py-0.5 text-[10px] font-medium tracking-[0.15em] text-amber-200 uppercase">
-                  Local place · not connected
-                </p>
-              )}
-              <Explorer parts={parts} selected={selected} onSelect={onSelect} />
-            </div>
-          </aside>
-
-          {/* ── Right: Properties ── */}
-          <aside className="absolute top-[4.5rem] right-4 bottom-[10.5rem] z-10 hidden w-[264px] flex-col md:flex">
-            <div className={`${PANEL} flex max-h-full min-h-0 flex-col overflow-hidden`}>
-              {selectedPart && selected !== null ? (
-                <Properties
-                  part={selectedPart}
-                  editable={editable}
-                  onEdit={(edit) => void onEdit(selected, edit)}
-                  onAsk={() => setInput((v) => `${v ? v.trimEnd() + " " : ""}\`${selectedPart.path}\` `)}
-                />
-              ) : (
-                <div className="p-4">
-                  <p className="text-[10px] font-medium tracking-[0.2em] text-white/45 uppercase">Properties</p>
-                  <p className="mt-2 text-[12.5px] leading-relaxed text-white/45">
-                    Select a part in the viewport or the Explorer to see and edit its properties.
-                  </p>
-                  <div className="mt-3 space-y-1.5 text-[11px] text-white/35">
-                    {[
-                      ["Ctrl+1–4", "Select · Move · Scale · Rotate"],
-                      ["Drag", "Orbit · right-drag to pan"],
-                      ["Esc", "Deselect"],
-                    ].map(([k, v]) => (
-                      <p key={k} className="flex justify-between gap-2">
-                        <span className="font-mono text-white/55">{k}</span>
-                        <span className="text-right">{v}</span>
-                      </p>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </div>
-          </aside>
-
-          {/* Mobile pairing sheet */}
-          {!connected && (
-            <div className="absolute inset-x-4 top-[8.5rem] z-10 md:hidden">
-              <PairPanel status={status} onNewCode={newPairCode} error={sessionError} />
-            </div>
+              {workspacePanel === "explorer" && <Explorer parts={parts} selected={selected} onSelect={onSelect} />}
+              {workspacePanel === "properties" && (selectedPart && selected !== null ? <Properties part={selectedPart} editable={editable} onEdit={(edit) => void onEdit(selected, edit)} onAsk={() => setInput((v) => `${v ? v.trimEnd() + " " : ""}\`${selectedPart.path}\` `)} /> : <div className="grid flex-1 place-items-center px-7 text-center"><div><span className="mx-auto grid size-11 place-items-center rounded-2xl border border-white/10 bg-white/[0.04] text-white/45"><RailIcon>{RAIL_ITEMS[1].icon}</RailIcon></span><p className="mt-3 text-sm font-medium text-white/80">Nothing selected</p><p className="mt-1 text-xs leading-relaxed text-white/40">Pick a part in the viewport or Explorer to inspect and edit its properties.</p><button type="button" onClick={() => setWorkspacePanel("explorer")} className="mt-4 rounded-lg border border-white/10 bg-white/[0.05] px-3 py-1.5 text-xs text-white/75 transition hover:bg-white/10">Open Explorer</button></div></div>)}
+              {workspacePanel === "connect" && (connected ? <div className="flex-1 overflow-y-auto p-4"><PlaceCard placeName={status?.studioInfo?.placeName ?? "Your place"} count={sceneApi.scene?.parts.length ?? 0} truncated={!!sceneApi.scene?.truncated} loading={sceneApi.loading} error={sceneApi.error} outdated={outdated} onNewCode={newPairCode} /></div> : <div className="flex-1 overflow-y-auto p-3"><PairPanel status={status} onNewCode={newPairCode} error={sessionError} /></div>)}
+              {workspacePanel === "view" && <div className="min-h-0 flex-1 overflow-y-auto p-3"><p className="px-2 pb-2 text-[10px] font-semibold tracking-[0.16em] text-white/35 uppercase">Viewport</p><div className="space-y-1"><OptionToggle label="Baseplate grid" description="Show the repeating Studio tile texture" checked={viewportOptions.showGrid} onChange={(checked) => setViewportOptions((o) => ({ ...o, showGrid: checked }))} /><OptionToggle label="View cube" description="Show the orientation helper" checked={viewportOptions.showViewcube} onChange={(checked) => setViewportOptions((o) => ({ ...o, showViewcube: checked }))} /><OptionToggle label="Grid snap" description="Move by 1 stud and scale by 0.1" checked={viewportOptions.gridSnap} onChange={(checked) => setViewportOptions((o) => ({ ...o, gridSnap: checked }))} /><OptionToggle label="Angle snap" description="Rotate in 15° increments" checked={viewportOptions.angleSnap} onChange={(checked) => setViewportOptions((o) => ({ ...o, angleSnap: checked }))} /></div>
+                <div className="mt-4 border-t border-white/[0.08] pt-3"><p className="px-2 pb-2 text-[10px] font-semibold tracking-[0.16em] text-white/35 uppercase">Gizmo space</p><div className="grid grid-cols-3 gap-1 rounded-xl border border-white/[0.08] bg-black/20 p-1">{(["auto", "world", "local"] as const).map((space) => <button key={space} type="button" aria-pressed={viewportOptions.gizmoSpace === space} onClick={() => setViewportOptions((o) => ({ ...o, gizmoSpace: space }))} className={`rounded-lg px-2 py-2 text-[11px] capitalize transition-colors ${viewportOptions.gizmoSpace === space ? "bg-blox/25 text-blox-soft" : "text-white/50 hover:bg-white/[0.06] hover:text-white"}`}>{space}</button>)}</div></div>
+                <div className="mt-4 border-t border-white/[0.08] pt-3"><p className="px-2 text-xs font-medium text-white/80">Shadows</p><p className="px-2 mt-0.5 text-[10px] text-white/40">Rendering quality</p><div className="mt-2 grid grid-cols-4 gap-1 rounded-xl border border-white/[0.08] bg-black/20 p-1">{(["none", "low", "medium", "high"] as const).map((quality) => { const active = quality === "none" ? viewportOptions.shadows === "none" : viewportOptions.shadows !== "none" && viewportOptions.shadowQuality === quality; return <button key={quality} type="button" aria-pressed={active} onClick={() => setViewportOptions((o) => quality === "none" ? { ...o, shadows: "none" } : { ...o, shadows: "soft", shadowQuality: quality })} className={`rounded-lg px-1 py-2 text-[10px] capitalize transition-colors ${active ? "bg-blox/25 text-blox-soft" : "text-white/50 hover:bg-white/[0.06] hover:text-white"}`}>{quality}</button>; })}</div></div>
+                <button type="button" onClick={() => setViewportOptions(DEFAULT_VIEWPORT_OPTIONS)} className="mt-4 w-full rounded-xl border border-white/[0.08] px-3 py-2 text-xs text-white/55 transition hover:bg-white/[0.05] hover:text-white">Reset viewport options</button></div>}
+            </aside>
           )}
 
           {toast && (
@@ -304,7 +305,7 @@ export default function StudioApp() {
         </>
       )}
 
-      {/* ── ForgeGUI-style chat dock ── */}
+      {/* ── Floating assistant dock ── */}
       {tab === "workspace" && (
         <ChatDock
           chat={chat}
@@ -312,6 +313,10 @@ export default function StudioApp() {
           setInput={setInput}
           connected={connected}
           modelLabel={settings.models[settings.provider]}
+          onClearChat={() => {
+            chat.clear();
+            setInput("");
+          }}
         />
       )}
 
@@ -383,7 +388,7 @@ function ToolBar({
   refreshing: boolean;
 }) {
   return (
-    <div className="absolute top-[4.5rem] left-1/2 z-10 flex -translate-x-1/2 items-center gap-0.5 rounded-2xl border border-white/10 bg-[#111318]/90 p-1 shadow-[0_20px_50px_-20px_rgba(10,20,40,0.6)] backdrop-blur-xl">
+    <div className="absolute bottom-4 left-1/2 z-10 flex -translate-x-1/2 items-center gap-0.5 rounded-[1.35rem] border border-white/15 bg-[#171a21]/80 p-1.5 shadow-[0_18px_50px_-22px_rgba(10,18,34,0.85),inset_0_1px_0_rgba(255,255,255,0.08)] backdrop-blur-2xl">
       {(["select", "move", "scale", "rotate"] as const).map((t, i) => (
         <ToolButton
           key={t}
@@ -460,12 +465,14 @@ function ChatDock({
   setInput,
   connected,
   modelLabel,
+  onClearChat,
 }: {
   chat: ReturnType<typeof useChat>;
   input: string;
   setInput: (v: string) => void;
   connected: boolean;
   modelLabel: string;
+  onClearChat: () => void;
 }) {
   const [open, setOpen] = useState(true);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -549,7 +556,7 @@ function ChatDock({
                   {!busy && (
                     <button
                       type="button"
-                      onClick={chat.clear}
+                      onClick={onClearChat}
                       className="hidden shrink-0 rounded-full px-2 py-1 hover:bg-white/[0.06] hover:text-white/75 sm:block"
                     >
                       New chat

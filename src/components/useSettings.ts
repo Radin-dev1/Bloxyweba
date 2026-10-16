@@ -8,16 +8,21 @@ export type Settings = {
   provider: ProviderId;
   models: Record<ProviderId, string>;
   apiKeys: Record<ProviderId, string>;
-  /** For the generation nodes (images, video, 3D as code). */
+  /** The user's own OpenRouter key: used free for Bloxy chat and the Nodes tab instead of bits. */
   openrouterKey: string;
 };
 
 const KEY = "bloxy.settings";
 
+// New users start on Bloxy (bits), which needs no key of their own.
 const DEFAULTS: Settings = {
-  provider: "claude",
-  models: { claude: PROVIDERS.claude.defaultModel, gemini: PROVIDERS.gemini.defaultModel },
-  apiKeys: { claude: "", gemini: "" },
+  provider: "openrouter",
+  models: {
+    openrouter: PROVIDERS.openrouter.defaultModel,
+    claude: PROVIDERS.claude.defaultModel,
+    gemini: PROVIDERS.gemini.defaultModel,
+  },
+  apiKeys: { openrouter: "", claude: "", gemini: "" },
   openrouterKey: "",
 };
 

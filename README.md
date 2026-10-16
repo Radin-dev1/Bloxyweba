@@ -51,6 +51,29 @@ Open http://localhost:3000 for the landing page. The app itself lives at http://
 
   ⚠️ If you set these on a public deployment, **anyone using the site spends your credits**. Leave them unset to make everyone bring their own key.
 
+## Bits (credits) and Roblox sign-in
+
+Bloxy can run on **your** OpenRouter key while users pay with **bits**:
+
+- Users **sign in with Roblox** and get **free bits every day**. The balance tops up to `BITS_DAILY` once per UTC day; it doesn't stack.
+- Each request costs what it really costs. OpenRouter reports the cost of every call, charged at `BITS_PER_USD` bits per dollar (default 1000, so 1 bit = $0.001). A request holds an estimate first, then settles to the real cost; failed calls are refunded.
+- Bits cover the Studio chat (the **Bloxy** provider in Settings) and the Nodes tab (image, video, 3D).
+- Anyone who pastes their own OpenRouter key in Settings uses that instead, free.
+- Admins (`ADMIN_ROBLOX_IDS`) can grant bits from the account menu.
+
+**Never put the OpenRouter key in the repo**, even a private one. Set it as an environment variable:
+
+| Variable | What it is |
+| --- | --- |
+| `OPENROUTER_API_KEY` | Your OpenRouter key. Turns bits on. |
+| `ROBLOX_CLIENT_ID`, `ROBLOX_CLIENT_SECRET` | From an OAuth app on create.roblox.com (Credentials → OAuth 2.0 Apps), with scopes `openid profile`. |
+| `AUTH_SECRET` | Long random string that signs session cookies (e.g. `openssl rand -base64 32`). |
+| `BITS_DAILY` | Free bits per day (default 300). |
+| `BITS_PER_USD` | Bits per $1 of real cost (default 1000). |
+| `ADMIN_ROBLOX_IDS` | Comma-separated Roblox user IDs that can grant bits. |
+
+In the Roblox OAuth app, add these redirect URLs: `https://<your-domain>/api/auth/roblox/callback` and `http://localhost:3000/api/auth/roblox/callback`. Balances live in the same Upstash Redis as the bridge (in memory locally).
+
 ## Deploying
 
 ### Vercel
@@ -101,6 +124,7 @@ The logo (Spark Brick, a 2-stud brick that winks) and its full kit live in `bran
 
 ```bash
 npx tsx scripts/smoke-bridge.ts   # both bridge backends (memory + fake Redis) with a fake plugin
+npx tsx scripts/smoke-bits.ts     # bits ledger: daily top-up, holds, settling, refunds, grants
 npm run lint
 npm run build
 ```

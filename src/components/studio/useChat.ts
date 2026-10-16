@@ -113,7 +113,10 @@ export function useChat({
             sessionId,
             provider: settings.provider,
             model: settings.models[settings.provider],
-            apiKey: settings.apiKeys[settings.provider] || undefined,
+            // Bloxy uses the user's own OpenRouter key if they set one, otherwise bits.
+            apiKey:
+              (settings.provider === "openrouter" ? settings.openrouterKey : settings.apiKeys[settings.provider]) ||
+              undefined,
             messages: history.map(({ role, content }) => ({ role, content })),
           }),
         });

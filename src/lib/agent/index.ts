@@ -2,6 +2,7 @@ import { bridge } from "@/lib/bridge";
 import { validateToolInput } from "@/lib/tools";
 import { runClaude } from "./claude";
 import { runGemini } from "./gemini";
+import { runOpenRouter } from "./openrouter";
 import type { AgentEvent, AgentParams, ProviderId, ToolExecutor } from "./types";
 
 export * from "./types";
@@ -32,5 +33,6 @@ export function makeStudioExecutor(sessionId: string, emit: (e: AgentEvent) => v
 }
 
 export function runAgent(provider: ProviderId, params: AgentParams) {
+  if (provider === "openrouter") return runOpenRouter(params);
   return provider === "claude" ? runClaude(params) : runGemini(params);
 }

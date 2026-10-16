@@ -1,4 +1,5 @@
-export type ProviderId = "claude" | "gemini";
+/** "openrouter" = Bloxy: the owner's OpenRouter key paid with bits (or the user's own OpenRouter key). */
+export type ProviderId = "openrouter" | "claude" | "gemini";
 
 export type ChatMessage = { role: "user" | "assistant"; content: string };
 
@@ -19,6 +20,15 @@ export type AgentParams = {
   executeTool: ToolExecutor;
   emit: (event: AgentEvent) => void;
   signal: AbortSignal;
+  /** Bits accounting per model step (only when running on the owner's key). */
+  billing?: StepBilling;
+};
+
+export type StepBilling = {
+  /** Holds bits for the next step; false = out of bits. */
+  beforeStep: () => Promise<boolean>;
+  /** Settles the held bits to the step's real cost (USD), or refunds on failure (null). */
+  afterStep: (costUsd: number | null | undefined, failed?: boolean) => Promise<void>;
 };
 
 /** Upper bound on model round-trips per user message, so a confused model can't loop forever. */

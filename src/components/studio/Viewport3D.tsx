@@ -10,6 +10,26 @@ import type { Scene, ScenePart } from "./useScene";
 
 export type Tool = "select" | "move" | "scale" | "rotate";
 
+export type ViewportOptions = {
+  shadows: "none" | "soft";
+  shadowQuality: "low" | "medium" | "high";
+  showGrid: boolean;
+  showViewcube: boolean;
+  gridSnap: boolean;
+  angleSnap: boolean;
+  gizmoSpace: "auto" | "world" | "local";
+};
+
+export const DEFAULT_VIEWPORT_OPTIONS: ViewportOptions = {
+  shadows: "soft",
+  shadowQuality: "high",
+  showGrid: true,
+  showViewcube: true,
+  gridSnap: true,
+  angleSnap: true,
+  gizmoSpace: "auto",
+};
+
 // Roblox Studio's selection blue and default Sky / Atmosphere palette.
 const SELECT_BLUE = "#1aa3ff";
 const SKY_TOP = "#9ac8db";
@@ -82,7 +102,7 @@ function matrixFor(p: ScenePart, out: THREE.Matrix4) {
 
 /**
  * Roblox plastic: plain, slightly glossy, no surface grid (modern Studio parts are smooth).
- * The baseplate's grid comes from its own Texture, drawn by <BaseplateTexture>.
+ * The baseplate grid is composited into the top-face material on the baseplate itself.
  */
 function plasticMaterial(transparent: boolean) {
   return new THREE.MeshStandardMaterial({
@@ -125,52 +145,91 @@ const FOG_FAR = 750;
 const BASEPLATE_STUDS_PER_TILE = 8;
 const BASEPLATE_TEXTURE_TRANSPARENCY = 0.8;
 
-function BaseplateTexture({ part }: { part: ScenePart }) {
+function BaseplateMesh({ part, showGrid, onPick }: { part: ScenePart; showGrid: boolean; onPick: () => void }) {
   const base = useTexture(BASEPLATE_TEXTURE_URL);
   const gl = useThree((s) => s.gl);
-  const texture = useMemo(() => {
-    const t = base.clone();
+  const topTexture = useMemo(() => {
+    const img = base.image as HTMLImageElement | HTMLCanvasElement | ImageBitmap | undefined;
+    const w = img?.width || 400;
+    const h = img?.height || 400;
+    const c = document.createElement("canvas");
+    c.width = w;
+    c.height = h;
+    const ctx = c.getContext("2d")!;
+    // Paint the baseplate colour first, then composite Studio's black grid Texture at 20% opacity
+    // into a single opaque texture so there is never a second coplanar surface to z-fight.
+    ctx.fillStyle = `#${part.color}`;
+    ctx.fillRect(0, 0, w, h);
+    if (img && showGrid) {
+      const mask = document.createElement("canvas");
+      mask.width = w;
+      mask.height = h;
+      const mctx = mask.getContext("2d")!;
+      mctx.drawImage(img as CanvasImageSource, 0, 0, w, h);
+      mctx.globalCompositeOperation = "source-in";
+      mctx.fillStyle = "#000000";
+      mctx.fillRect(0, 0, w, h);
+      ctx.globalAlpha = 1 - BASEPLATE_TEXTURE_TRANSPARENCY;
+      ctx.drawImage(mask, 0, 0);
+    }
+    const t = new THREE.CanvasTexture(c);
     t.wrapS = t.wrapT = THREE.RepeatWrapping;
     t.colorSpace = THREE.SRGBColorSpace;
     t.anisotropy = gl.capabilities.getMaxAnisotropy();
     t.repeat.set(part.size[0] / BASEPLATE_STUDS_PER_TILE, part.size[2] / BASEPLATE_STUDS_PER_TILE);
     t.needsUpdate = true;
     return t;
-  }, [base, gl, part.size]);
-  useEffect(() => () => texture.dispose(), [texture]);
+  }, [base, gl, part.color, part.size, showGrid]);
 
-  // Unit plane on the part's top face, transformed by the part's CFrame and size.
-  const matrix = useMemo(() => {
-    const [x, y, z, r00, r01, r02, r10, r11, r12, r20, r21, r22] = part.cframe;
-    const m = new THREE.Matrix4().set(r00, r01, r02, x, r10, r11, r12, y, r20, r21, r22, z, 0, 0, 0, 1);
-    return m
-      .multiply(new THREE.Matrix4().makeScale(part.size[0], part.size[1], part.size[2]))
-      .multiply(new THREE.Matrix4().makeTranslation(0, 0.5, 0))
-      .multiply(new THREE.Matrix4().makeRotationX(-Math.PI / 2));
-  }, [part]);
+  const materials = useMemo(() => {
+    const side = new THREE.MeshStandardMaterial({
+      color: `#${part.color}`,
+      roughness: 0.6,
+      metalness: 0,
+    });
+    const top = new THREE.MeshStandardMaterial({
+      map: topTexture,
+      roughness: 0.6,
+      metalness: 0,
+    });
+    // BoxGeometry material groups: 0=+X, 1=-X, 2=+Y (top), 3=-Y (bottom), 4=+Z, 5=-Z
+    return [side, side, top, side, side, side];
+  }, [part.color, topTexture]);
+
+  useEffect(
+    () => () => {
+      topTexture.dispose();
+      materials[0].dispose();
+      materials[2].dispose();
+    },
+    [topTexture, materials],
+  );
+
+  const matrix = useMemo(() => matrixFor(part, new THREE.Matrix4()), [part]);
 
   return (
-    <mesh matrix={matrix} matrixAutoUpdate={false} receiveShadow raycast={() => null} renderOrder={1}>
-      <planeGeometry args={[1, 1]} />
-      <meshBasicMaterial
-        color="#000000"
-        map={texture}
-        transparent
-        opacity={1 - BASEPLATE_TEXTURE_TRANSPARENCY}
-        depthWrite={false}
-        polygonOffset
-        polygonOffsetFactor={-1}
-        polygonOffsetUnits={-1}
-      />
+    <mesh
+      matrix={matrix}
+      matrixAutoUpdate={false}
+      material={materials}
+      receiveShadow
+      onClick={(e: ThreeEvent<MouseEvent>) => {
+        e.stopPropagation();
+        if (Date.now() - lastGizmoUse < 400) return;
+        onPick();
+      }}
+    >
+      <boxGeometry args={[1, 1, 1]} />
     </mesh>
   );
 }
 
 type Group = { key: string; shape: string; neon: boolean; transparent: boolean; indices: number[] };
 
-export function groupParts(parts: ScenePart[]): Group[] {
+export function groupParts(parts: ScenePart[], skip?: (p: ScenePart) => boolean): Group[] {
   const groups = new Map<string, Group>();
   parts.forEach((p, i) => {
+    if (skip?.(p)) return;
     const shape = shapeKey(p.shape);
     const neon = p.material === "Neon";
     const transparent = p.transparency > 0.05 || TRANSPARENT_MATERIALS.has(p.material);
@@ -246,11 +305,13 @@ function SelectionGizmo({
   part,
   tool,
   editable,
+  options,
   onCommit,
 }: {
   part: ScenePart;
   tool: Tool;
   editable: boolean;
+  options: ViewportOptions;
   onCommit: (edit: PartEdit) => void;
 }) {
   const proxy = useRef<THREE.Group>(null);
@@ -289,6 +350,7 @@ function SelectionGizmo({
   };
 
   const mode = tool === "move" ? "translate" : tool === "rotate" ? "rotate" : "scale";
+  const space = options.gizmoSpace === "auto" ? (tool === "move" ? "world" : "local") : options.gizmoSpace;
 
   return (
     <>
@@ -303,10 +365,10 @@ function SelectionGizmo({
         <TransformControls
           object={proxy as React.RefObject<THREE.Object3D>}
           mode={mode}
-          space={tool === "move" ? "world" : "local"}
-          translationSnap={1}
-          rotationSnap={THREE.MathUtils.degToRad(15)}
-          scaleSnap={0.1}
+          space={space}
+          translationSnap={options.gridSnap ? 1 : null}
+          rotationSnap={options.angleSnap ? THREE.MathUtils.degToRad(15) : null}
+          scaleSnap={options.gridSnap ? 0.1 : null}
           size={0.85}
           onObjectChange={() => invalidate()}
           onMouseDown={() => (lastGizmoUse = Date.now())}
@@ -422,6 +484,7 @@ export default function Viewport3D({
   fitKey,
   tool,
   editable,
+  options = DEFAULT_VIEWPORT_OPTIONS,
   onEdit,
 }: {
   scene: Scene | null;
@@ -430,18 +493,20 @@ export default function Viewport3D({
   fitKey: number;
   tool: Tool;
   editable: boolean;
+  options?: ViewportOptions;
   onEdit: (index: number, edit: PartEdit) => void;
 }) {
   const parts = useMemo(() => scene?.parts ?? [], [scene]);
   const drawn = useMemo(() => parts.map(displayPart), [parts]);
-  const groups = useMemo(() => groupParts(drawn), [drawn]);
+  const groups = useMemo(() => groupParts(drawn, isBaseplate), [drawn]);
   const baseplates = useMemo(() => drawn.filter(isBaseplate), [drawn]);
   const selectedPart = selected !== null ? parts[selected] : undefined;
+  const shadowSize = options.shadowQuality === "low" ? 512 : options.shadowQuality === "medium" ? 1024 : 2048;
 
   return (
     <Canvas
       frameloop="demand"
-      shadows
+      shadows={options.shadows !== "none"}
       dpr={[1, 2]}
       camera={{ fov: 50, near: 0.5, far: 20000, position: [60, 45, 60] }}
       onPointerMissed={(e) => {
@@ -457,10 +522,10 @@ export default function Viewport3D({
         position={[140, 260, 90]}
         color="#f6f9ff"
         intensity={2.0}
-        castShadow
+        castShadow={options.shadows !== "none"}
         shadow-bias={-0.0004}
         shadow-normalBias={0.03}
-        shadow-mapSize={[2048, 2048]}
+        shadow-mapSize={[shadowSize, shadowSize]}
         shadow-camera-left={-300}
         shadow-camera-right={300}
         shadow-camera-top={300}
@@ -480,7 +545,8 @@ export default function Viewport3D({
       ))}
       <Suspense fallback={null}>
         {baseplates.map((p) => (
-          <BaseplateTexture key={p.path} part={p} />
+          // Like Studio's Locked Baseplate: clicking it deselects instead of grabbing it.
+          <BaseplateMesh key={p.path} part={p} showGrid={options.showGrid} onPick={() => onSelect(null)} />
         ))}
       </Suspense>
       {selected !== null && selectedPart && (
@@ -489,6 +555,7 @@ export default function Viewport3D({
           part={selectedPart}
           tool={tool}
           editable={editable}
+          options={options}
           onCommit={(edit) => onEdit(selected, edit)}
         />
       )}
@@ -496,16 +563,18 @@ export default function Viewport3D({
       <OrbitControls makeDefault enableDamping={false} maxPolarAngle={Math.PI * 0.495} />
       <CameraRig scene={scene} fitKey={fitKey} />
 
-      <GizmoHelper alignment="bottom-right" margin={[84, 150]}>
-        <GizmoViewcube
-          color="#1c1f27"
-          textColor="#e8ecf4"
-          strokeColor="#3b4252"
-          hoverColor={SELECT_BLUE}
-          opacity={0.92}
-          font="600 18px system-ui, sans-serif"
-        />
-      </GizmoHelper>
+      {options.showViewcube && (
+        <GizmoHelper alignment="bottom-right" margin={[78, 126]}>
+          <GizmoViewcube
+            color="#1c1f27"
+            textColor="#e8ecf4"
+            strokeColor="#3b4252"
+            hoverColor={SELECT_BLUE}
+            opacity={0.92}
+            font="600 18px system-ui, sans-serif"
+          />
+        </GizmoHelper>
+      )}
     </Canvas>
   );
 }

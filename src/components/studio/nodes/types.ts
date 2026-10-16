@@ -18,7 +18,7 @@ export type VideoData = Base & {
   output?: string;
   phase?: string;
 };
-export type Model3DData = Base & { prompt: string; model: string; build?: BuildT; inserted?: string };
+export type Model3DData = Base & { prompt: string; model: string; build?: BuildT; inserted?: string; codeFormat?: "roblox" | "blender" };
 export type StudioData = Base & { title: string; prompt: string; result?: string; tools?: number };
 export type CheckData = Base & { preset: CheckPreset; result?: string; tools?: number };
 
