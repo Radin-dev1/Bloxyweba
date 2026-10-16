@@ -20,9 +20,13 @@ import ModelPicker from "./ModelPicker";
 import { useAccount } from "./useAccount";
 import { useScene, type Scene } from "./useScene";
 import { DEFAULT_VIEWPORT_OPTIONS, type Tool, type ViewportOptions } from "./Viewport3D";
+import WorkspaceDock, { type DockPanel } from "./dock/WorkspaceDock";
 
 const Viewport3D = dynamic(() => import("./Viewport3D"), { ssr: false });
 const NodeEditor = dynamic(() => import("./NodeEditor"), { ssr: false });
+const IdeaForge = dynamic(() => import("./dock/IdeaForge"), { ssr: false });
+const AvatarWorkbench = dynamic(() => import("./dock/AvatarWorkbench"), { ssr: false });
+const ExportPanel = dynamic(() => import("./dock/ExportPanel"), { ssr: false });
 
 const EASE = "ease-[var(--ease-spring)]";
 const PLUGIN_VERSION = "0.3.0";
@@ -55,7 +59,7 @@ function OptionToggle({
   return (
     <div className="flex items-center justify-between gap-3 rounded-xl px-2 py-2.5 transition-colors hover:bg-white/[0.035]">
       <div className="min-w-0"><p className="text-xs font-medium text-white/85">{label}</p><p className="mt-0.5 text-[10px] leading-snug text-white/40">{description}</p></div>
-      <button type="button" role="switch" aria-checked={checked} aria-label={label} onClick={() => onChange(!checked)} className={`relative h-[22px] w-10 shrink-0 rounded-full border transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blox-soft ${checked ? "border-blox/50 bg-blox/75" : "border-white/10 bg-white/[0.08]"}`}><span className={`absolute top-[3px] size-3.5 rounded-full bg-white shadow transition-transform ${checked ? "translate-x-[19px]" : "translate-x-[3px]"}`} /></button>
+      <button type="button" role="switch" aria-checked={checked} aria-label={label} onClick={() => onChange(!checked)} className={`relative h-[22px] w-10 shrink-0 rounded-full border transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blox-soft ${checked ? "border-blox/50 bg-blox/75" : "border-white/10 bg-white/[0.08]"}`}><span className={`absolute top-[3px] left-0 size-3.5 rounded-full bg-white shadow transition-transform ${checked ? "translate-x-[21px]" : "translate-x-[3px]"}`} /></button>
     </div>
   );
 }
@@ -80,6 +84,7 @@ export default function StudioApp() {
   const [tab, setTab] = useState<Tab>("workspace");
   const [workspacePanel, setWorkspacePanel] = useState<WorkspacePanel>(null);
   const [viewportOptions, setViewportOptions] = useState<ViewportOptions>(DEFAULT_VIEWPORT_OPTIONS);
+  const [dockPanel, setDockPanel] = useState<DockPanel>(null);
   const connected = !!status?.connected;
 
   const sceneApi = useScene(sessionId, connected);
@@ -302,6 +307,36 @@ export default function StudioApp() {
             <div className="absolute top-[8.5rem] left-1/2 z-30 max-w-md -translate-x-1/2 rounded-2xl border border-red-400/25 bg-[#1a1215]/95 px-4 py-2.5 text-sm text-red-200 shadow-xl backdrop-blur-xl">
               {toast}
             </div>
+          )}
+        </>
+      )}
+
+      {/* ── Nilo-style tool dock: Idea Forge, Roblox Avatar, Export ── */}
+      {tab === "workspace" && (
+        <>
+          <WorkspaceDock open={dockPanel} onOpen={setDockPanel} />
+          {dockPanel === "forge" && (
+            <IdeaForge
+              openrouterKey={settings.openrouterKey}
+              connected={connected}
+              onInsertBuild={insertBuild}
+              onSpent={() => void refreshAccount()}
+              onNeedsKey={() => setShowSettings(true)}
+              onClose={() => setDockPanel(null)}
+            />
+          )}
+          {dockPanel === "avatar" && (
+            <AvatarWorkbench
+              openrouterKey={settings.openrouterKey}
+              connected={connected}
+              onInsertBuild={insertBuild}
+              onSpent={() => void refreshAccount()}
+              onNeedsKey={() => setShowSettings(true)}
+              onClose={() => setDockPanel(null)}
+            />
+          )}
+          {dockPanel === "export" && (
+            <ExportPanel parts={parts} selectedPart={selectedPart} onClose={() => setDockPanel(null)} />
           )}
         </>
       )}
