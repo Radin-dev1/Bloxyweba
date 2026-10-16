@@ -1,7 +1,7 @@
 "use client";
 
 import { Canvas, useThree, type ThreeEvent } from "@react-three/fiber";
-import { Edges, GizmoHelper, GizmoViewcube, OrbitControls, TransformControls, useCubeTexture, useTexture } from "@react-three/drei";
+import { Edges, GizmoHelper, GizmoViewcube, OrbitControls, TransformControls, useCubeTexture, useGLTF, useTexture } from "@react-three/drei";
 import { Suspense, useEffect, useLayoutEffect, useMemo, useRef } from "react";
 import * as THREE from "three";
 import type { OrbitControls as OrbitControlsImpl } from "three-stdlib";
@@ -525,6 +525,23 @@ function PhotoSky({ url }: { url: string }) {
   return <primitive attach="background" object={texture} />;
 }
 
+/** A real mesh (GLB from Blender) standing in the workspace. */
+function GltfMesh({ url, position }: { url: string; position: [number, number, number] }) {
+  const { scene } = useGLTF(url);
+  const object = useMemo(() => {
+    const o = scene.clone(true);
+    o.traverse((c) => {
+      const m = c as THREE.Mesh;
+      if (m.isMesh) {
+        m.castShadow = true;
+        m.receiveShadow = true;
+      }
+    });
+    return o;
+  }, [scene]);
+  return <primitive object={object} position={position} />;
+}
+
 function SkyBackground({ sky = "studio" }: { sky?: Environment["sky"] }) {
   const image = SKY_PRESETS[sky].image;
   if (image) {
@@ -632,6 +649,7 @@ export default function Viewport3D({
   editable,
   options = DEFAULT_VIEWPORT_OPTIONS,
   environment = DEFAULT_ENVIRONMENT,
+  meshes = [],
   onEdit,
 }: {
   scene: Scene | null;
@@ -644,6 +662,8 @@ export default function Viewport3D({
   editable: boolean;
   options?: ViewportOptions;
   environment?: Environment;
+  /** Real meshes (GLBs) placed in the workspace, e.g. from Blender. */
+  meshes?: { name: string; url: string; origin: [number, number, number] }[];
   onEdit: (index: number, edit: PartEdit) => void;
 }) {
   const skyInfo = SKY_PRESETS[environment.sky];
@@ -724,6 +744,11 @@ export default function Viewport3D({
       <OrbitControls makeDefault enableDamping={false} maxPolarAngle={Math.PI * 0.495} />
       <CameraRig scene={scene} fitKey={fitKey} />
       <FocusRig focus={focus} />
+      <Suspense fallback={null}>
+        {meshes.map((m) => (
+          <GltfMesh key={m.url} url={m.url} position={m.origin} />
+        ))}
+      </Suspense>
 
       {options.showViewcube && (
         <GizmoHelper alignment="bottom-right" margin={[78, 126]}>

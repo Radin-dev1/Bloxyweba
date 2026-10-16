@@ -1,11 +1,12 @@
 "use client";
 
 import dynamic from "next/dynamic";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { GEN_DEFAULTS, type BuildT } from "@/lib/openrouter";
 import { Chip, DoodlePad, ErrorNote, GLYPHS, GenError, Glyph, IDEAS, postGen, randomOf, readImage } from "./shared";
 
 const ModelPreview = dynamic(() => import("../nodes/ModelPreview"), { ssr: false });
+const GlbPreview = dynamic(() => import("../nodes/GlbPreview"), { ssr: false });
 
 const STYLES = ["None", "Roblox", "Low poly", "Cartoon", "Anime", "Realistic", "Voxel", "Pixel art"] as const;
 const RANDOM: { key: keyof typeof IDEAS; label: string }[] = [
@@ -16,8 +17,9 @@ const RANDOM: { key: keyof typeof IDEAS; label: string }[] = [
 ];
 
 import type { Generate3D } from "../model3dStream";
+import { blenderAvailable, type BlenderMesh } from "../blenderMesh";
 
-type Idea = { id: string; prompt: string; image: string; build?: BuildT; inserted?: string };
+type Idea = { id: string; prompt: string; image: string; build?: BuildT; inserted?: string; mesh?: BlenderMesh };
 
 export default function IdeaForge({
   generate3D,
@@ -46,6 +48,20 @@ export default function IdeaForge({
   const [imageModel, setImageModel] = useState<string>(GEN_DEFAULTS.image);
   const [reference, setReference] = useState<string | null>(null);
   const [assetPack, setAssetPack] = useState(false);
+  // "Real mesh": the model is written as a Blender script and built in real Blender.
+  const [hasBlender, setHasBlender] = useState(false);
+  const [realMesh, setRealMesh] = useState(false);
+  useEffect(() => {
+    let alive = true;
+    void blenderAvailable().then((ok) => {
+      if (!alive) return;
+      setHasBlender(ok);
+      setRealMesh(ok);
+    });
+    return () => {
+      alive = false;
+    };
+  }, []);
   const [cleanBg, setCleanBg] = useState(true);
   const [doodling, setDoodling] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
@@ -109,7 +125,7 @@ export default function IdeaForge({
       apiKey: openrouterKey,
       prompt: current.prompt === "Uploaded reference" ? "the object in the image" : current.prompt,
       image: current.image,
-      codeFormat: "roblox",
+      codeFormat: realMesh && hasBlender ? "blender" : "roblox",
       ...(model3d ? { model: model3d } : {}),
     };
     try {
@@ -125,7 +141,7 @@ export default function IdeaForge({
           },
           { autoAdd: true },
         );
-        update({ ...current, build: r.build, inserted: r.path });
+        update({ ...current, build: r.build, inserted: r.path, mesh: r.mesh });
       } else {
         const r = await postGen<{ build: BuildT }>("/api/gen/model3d", body);
         update({ ...current, build: r.build, inserted: undefined });
@@ -248,8 +264,22 @@ export default function IdeaForge({
                 </div>
               ) : current ? (
                 view === "3d" && current.build ? (
-                  <div className="h-full">
-                    <ModelPreview build={current.build} />
+                  <div className="relative h-full">
+                    {current.mesh ? <GlbPreview url={current.mesh.url} /> : <ModelPreview build={current.build} />}
+                    {current.mesh && (
+                      <div className="absolute bottom-3 left-3 flex items-center gap-2">
+                        <span className="rounded-full bg-black/60 px-2.5 py-1 text-[11px] text-white backdrop-blur">
+                          Blender mesh · {current.mesh.tris.toLocaleString()} tris
+                        </span>
+                        <a
+                          href={current.mesh.url}
+                          download={`${current.build.name}.glb`}
+                          className="rounded-full bg-blox px-2.5 py-1 text-[11px] font-medium text-white"
+                        >
+                          Download .glb
+                        </a>
+                      </div>
+                    )}
                   </div>
                 ) : (
                   // eslint-disable-next-line @next/next/no-img-element
@@ -367,6 +397,11 @@ export default function IdeaForge({
                 <Chip onClick={() => setDoodling((d) => !d)}>
                   <Glyph d={GLYPHS.pencil} /> Doodle
                 </Chip>
+                {hasBlender && (
+                  <Chip active={realMesh} onClick={() => setRealMesh((v) => !v)} title="Make 3D builds a real mesh in Blender (beveled, smooth, exportable) instead of Roblox parts">
+                    <Glyph d={GLYPHS.cube} /> Real mesh
+                  </Chip>
+                )}
                 <Chip active={assetPack} onClick={() => setAssetPack((v) => !v)} title="Generate a sheet of matching variations">
                   <Glyph d={GLYPHS.grid} /> Asset Pack
                 </Chip>

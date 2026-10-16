@@ -49,6 +49,10 @@ A website (Next.js) with an AI agent that builds inside **Roblox Studio**. It's 
 - **Free models only** (Settings, the model chip and the model browser): `settings.freeOnly`, `models.ts` (`FREE_RECOMMENDED`, `isFreeChatModel`), `freeModels.ts`. Idea Forge's Make 3D also uses a free model in this mode.
 - **Testing without a real key:** set `OPENROUTER_BASE_URL` (in `.env.local`) to a fake OpenRouter server.
 
+- **Skill packs** (`src/lib/skills.ts`): building, modeling, map and texture know-how distilled from the roblox-3d-model, roblox-texture-gen, building-maps, building-3d-objects and roblox-map skills. `pickSkills()` loads only the packs a message needs, for the chat and for 3D generation. `src/lib/buildCheck.ts` checks every offline build (floating, sunk, duplicate, grey parts, size vs a 5-stud player) and the agent fixes its own build from the report; 3D results are set down on the ground.
+- **Chat-only page** at `/chat` (`src/components/chat/`): same conversation and AI as Studio, models it builds show as 3D previews inline and are saved into the local workspace.
+- **Blender backend**: `blender/bloxy_runner.py` + `src/lib/blender.ts` + `/api/gen/blender`. Blender-mode 3D models are executed in real headless Blender (found automatically, or `BLENDER_PATH`), budgeted to 10k tris, scaled to studs, exported as GLB with a preview render. Scripts are checked against a denylist first; never runs on Vercel, and production needs `BLENDER_PATH`. Meshes show in Idea Forge ("Real mesh"), the Nodes 3D node and the workspace (saved in IndexedDB).
+
 ## Open items / next steps
 
 0. **Turn on bits in production:** set `OPENROUTER_API_KEY`, `ROBLOX_CLIENT_ID`, `ROBLOX_CLIENT_SECRET`, `AUTH_SECRET` and `ADMIN_ROBLOX_IDS` in Vercel, register the callback URL in the Roblox OAuth app, then redeploy. Untested against real Roblox and OpenRouter so far; tested with a fake key and a forged test session.

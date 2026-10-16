@@ -60,7 +60,7 @@ export default function HeroPrompt() {
                   {p}
                 </button>
               ))}
-              <span className="hidden px-2 text-white/25 sm:inline">ChatGPT soon</span>
+              <span className="hidden px-2 text-white/25 sm:inline">+380 more models</span>
             </div>
             <button
               type="submit"

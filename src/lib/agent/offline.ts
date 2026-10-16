@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { checkBuild, groundBuild } from "@/lib/buildCheck";
 import { Build } from "@/lib/openrouter";
 import { SYSTEM_PROMPT } from "@/lib/tools";
 import type { AgentEvent, AgentToolSpec, ToolExecutor } from "./types";
@@ -46,9 +47,14 @@ export function makeOfflineExecutor(emit: (e: AgentEvent) => void): ToolExecutor
       if (!parsed.success) {
         content = `Invalid build: ${parsed.error.message.slice(0, 1200)}`;
       } else {
-        emit({ type: "build", id: callId, build: parsed.data });
+        // Sit it on the ground, place it, then report what a careful builder would check.
+        const build = groundBuild(parsed.data);
+        emit({ type: "build", id: callId, build });
         ok = true;
-        content = `Placed "${parsed.data.name}" (${parsed.data.parts.length} parts) in the user's Bloxy workspace.`;
+        const check = checkBuild(build);
+        content =
+          `Placed "${build.name}" in the user's Bloxy workspace. ${check.summary}` +
+          (check.problems.length ? "\nFix these by calling build_model again with the same name." : "");
       }
     }
     emit({ type: "tool_result", id: callId, ok, preview: content.slice(0, 2000) });

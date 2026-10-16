@@ -12,6 +12,8 @@ import {
   type StepBilling,
 } from "@/lib/agent";
 import { BIT_ESTIMATES, refund, reserve, resolveBilling, settle } from "@/lib/bits";
+import { pickSkills, skillBlock } from "@/lib/skills";
+import { SYSTEM_PROMPT } from "@/lib/tools";
 
 // Vercel Hobby allows at most 300s per function; long agent runs continue in the next message.
 export const maxDuration = 300;
@@ -77,13 +79,15 @@ export async function POST(request: Request) {
 
   // Drop empty turns (e.g. an assistant reply that was only tool calls) so providers don't reject them.
   const history = messages.filter((m) => m.content.trim() !== "");
+  // Load the skill packs this request needs (modeling, maps, textures), like skills on demand.
+  const skills = skillBlock(pickSkills(history.at(-1)?.content ?? ""));
 
   const { bridge } = await import("@/lib/bridge");
   // Without Studio the chat still works: it can talk, write Luau and build into the Bloxy workspace.
   const status = sessionId ? await bridge.getSessionStatus(sessionId).catch(() => null) : null;
   const studioConnected = !!status?.connected;
   const jobCreated = sessionId ? await bridge.createChatJob(sessionId, jobId).catch(() => false) : false;
-  if (!sessionId || !jobCreated) return streamReply(request, { provider, model, apiKey, history, billing });
+  if (!sessionId || !jobCreated) return streamReply(request, { provider, model, apiKey, history, billing, skills });
 
   const controller = new AbortController();
   let writes = Promise.resolve();
@@ -111,7 +115,9 @@ export async function POST(request: Request) {
         emit,
         signal: controller.signal,
         executeTool: studioConnected ? makeStudioExecutor(sessionId, emit) : makeOfflineExecutor(emit),
-        ...(studioConnected ? {} : { tools: OFFLINE_TOOLS, system: OFFLINE_SYSTEM_PROMPT }),
+        ...(studioConnected
+          ? { system: SYSTEM_PROMPT + skills }
+          : { tools: OFFLINE_TOOLS, system: OFFLINE_SYSTEM_PROMPT + skills }),
         billing,
       });
       await writes;
@@ -183,6 +189,7 @@ type StreamRun = {
   apiKey: string;
   history: { role: "user" | "assistant"; content: string }[];
   billing?: StepBilling;
+  skills: string;
 };
 
 /** Runs the agent in offline mode and streams its events back as newline-delimited JSON. */
@@ -196,13 +203,14 @@ function streamReply(request: Request, run: StreamRun) {
         if (!closed) controller.enqueue(encoder.encode(JSON.stringify(tidy(raw)) + "\n"));
       };
       try {
+        const { skills, ...agent } = run;
         await runAgent(run.provider, {
-          ...run,
+          ...agent,
           emit,
           signal: request.signal,
           executeTool: makeOfflineExecutor(emit),
           tools: OFFLINE_TOOLS,
-          system: OFFLINE_SYSTEM_PROMPT,
+          system: OFFLINE_SYSTEM_PROMPT + skills,
         });
       } catch (err) {
         if (!request.signal.aborted) emit({ type: "error", message: describeError(err) });

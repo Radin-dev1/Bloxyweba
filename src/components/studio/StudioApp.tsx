@@ -15,6 +15,7 @@ import type { BuildT } from "@/lib/openrouter";
 import { buildToParts } from "./nodes/ModelPreview";
 import { streamModel3d, type Model3DHandlers } from "./model3dStream";
 import { useLiveBuild } from "./useLiveBuild";
+import { blenderAvailable, meshStore, runBlender, type WorkspaceMesh } from "./blenderMesh";
 import { applyEdit, toStudioProperties, type PartEdit } from "./sceneMath";
 import { useChat } from "./useChat";
 import AccountPill from "./AccountPill";
@@ -139,6 +140,15 @@ export default function StudioApp() {
   const parts = useMemo(() => scene?.parts ?? [], [scene]);
   // A model being generated shows up in the workspace part by part, on top of the real scene.
   const liveBuild = useLiveBuild();
+  // Real meshes from Blender, kept in IndexedDB so they survive reloads.
+  const [meshModels, setMeshModels] = useState<WorkspaceMesh[]>([]);
+  useEffect(() => {
+    let alive = true;
+    void meshStore.all().then((m) => alive && setMeshModels(m));
+    return () => {
+      alive = false;
+    };
+  }, []);
   const [focus, setFocus] = useState<ViewportFocus | undefined>();
   const focusOn = (origin: [number, number, number]) =>
     setFocus((f) => ({ key: (f?.key ?? 0) + 1, center: [origin[0], 6, origin[2]], radius: 28 }));
@@ -221,10 +231,11 @@ export default function StudioApp() {
       if (isBaseplate(p)) continue;
       maxX = Math.max(maxX, p.cframe[0] + Math.max(...p.size) / 2);
     }
+    if (!connected) for (const m of meshModels) maxX = Math.max(maxX, m.origin[0] + Math.max(m.dims[0], m.dims[1]) / 2);
     return maxX === -Infinity ? [0, 0, 0] : [Math.ceil(maxX + 20), 0, 0];
   };
   const uniqueName = (name: string) => {
-    const taken = (n: string) => parts.some((p) => p.path.startsWith(`Workspace.${n}.`));
+    const taken = (n: string) => parts.some((p) => p.path.startsWith(`Workspace.${n}.`)) || meshModels.some((m) => m.name === n);
     if (!taken(name)) return name;
     let i = 2;
     while (taken(`${name}${i}`)) i++;
@@ -280,14 +291,31 @@ export default function StudioApp() {
           handlers.onPart?.(p);
         },
       });
+      // Blender-mode models: run the script in real Blender for an actual mesh.
+      let mesh: Awaited<ReturnType<typeof runBlender>> | undefined;
+      if (r.build.blender_script && (await blenderAvailable())) {
+        liveBuild.status("Running Blender");
+        handlers.onStatus?.("Running Blender…");
+        mesh = await runBlender(r.build.blender_script).catch((err: Error) => {
+          handlers.onStatus?.(`Blender failed: ${err.message}`);
+          return undefined;
+        });
+      }
       let path: string | undefined;
       if (options.autoAdd) {
-        const build = { ...r.build, name: uniqueName(r.build.name) };
-        path = await insertBuild(build, origin);
-        r.build = build;
+        const name = uniqueName(r.build.name);
+        if (mesh && !connected) {
+          void meshStore.put({ name, glb: mesh.glb, origin, dims: mesh.dims, tris: mesh.tris });
+          setMeshModels((all) => [...all, { name, url: mesh!.url, origin, dims: mesh!.dims, tris: mesh!.tris }]);
+          path = `Workspace.${name}`;
+        } else {
+          // Studio gets the part version (a real mesh needs an upload or File > Import 3D).
+          path = await insertBuild({ ...r.build, name }, origin);
+        }
+        r.build = { ...r.build, name };
       }
       void refreshAccount();
-      return { ...r, path };
+      return { ...r, path, mesh };
     } finally {
       liveBuild.end();
     }
@@ -380,6 +408,7 @@ export default function StudioApp() {
         {tab === "workspace" ? (
           <Viewport3D
             scene={viewScene}
+            meshes={connected ? [] : meshModels}
             focus={focus}
             selected={selected}
             onSelect={onSelect}
@@ -486,7 +515,7 @@ export default function StudioApp() {
               {workspacePanel === "connect" && (connected ? <div className="flex-1 overflow-y-auto p-4"><PlaceCard placeName={status?.studioInfo?.placeName ?? "Your place"} count={sceneApi.scene?.parts.length ?? 0} truncated={!!sceneApi.scene?.truncated} loading={sceneApi.loading} error={sceneApi.error} outdated={outdated} onNewCode={newPairCode} /></div> : <div className="flex-1 overflow-y-auto p-3"><PairPanel status={status} onNewCode={newPairCode} error={sessionError} /></div>)}
               {workspacePanel === "view" && <div className="min-h-0 flex-1 overflow-y-auto p-3"><p className="px-2 pb-2 text-[10px] font-semibold tracking-[0.16em] text-white/35 uppercase">Viewport</p><div className="space-y-1"><OptionToggle label="Baseplate grid" description="Show the repeating Studio tile texture" checked={viewportOptions.showGrid} onChange={(checked) => setViewportOptions((o) => ({ ...o, showGrid: checked }))} /><OptionToggle label="View cube" description="Show the orientation helper" checked={viewportOptions.showViewcube} onChange={(checked) => setViewportOptions((o) => ({ ...o, showViewcube: checked }))} /><OptionToggle label="Grid snap" description="Move by 1 stud and scale by 0.1" checked={viewportOptions.gridSnap} onChange={(checked) => setViewportOptions((o) => ({ ...o, gridSnap: checked }))} /><OptionToggle label="Angle snap" description="Rotate in 15° increments" checked={viewportOptions.angleSnap} onChange={(checked) => setViewportOptions((o) => ({ ...o, angleSnap: checked }))} /></div>
                 <div className="mt-4 border-t border-white/[0.08] pt-3"><p className="px-2 pb-2 text-[10px] font-semibold tracking-[0.16em] text-white/35 uppercase">Gizmo space</p><div className="grid grid-cols-3 gap-1 rounded-xl border border-white/[0.08] bg-black/20 p-1">{(["auto", "world", "local"] as const).map((space) => <button key={space} type="button" aria-pressed={viewportOptions.gizmoSpace === space} onClick={() => setViewportOptions((o) => ({ ...o, gizmoSpace: space }))} className={`rounded-lg px-2 py-2 text-[11px] capitalize transition-colors ${viewportOptions.gizmoSpace === space ? "bg-blox/25 text-blox-soft" : "text-white/50 hover:bg-white/[0.06] hover:text-white"}`}>{space}</button>)}</div></div>
-                {!connected && demo.parts.length > 1 && <div className="mt-4 border-t border-white/[0.08] pt-3"><p className="px-2 pb-2 text-[10px] font-semibold tracking-[0.16em] text-white/35 uppercase">Local workspace</p><button type="button" onClick={() => { setSelectedPath(null); setDemo(demoScene()); }} className="w-full rounded-lg border border-white/10 bg-white/[0.04] px-3 py-2 text-left text-xs text-white/70 transition hover:border-red-400/30 hover:bg-red-500/10 hover:text-red-200">Clear everything built here ({demo.parts.length - 1} parts)</button></div>}
+                {!connected && (demo.parts.length > 1 || meshModels.length > 0) && <div className="mt-4 border-t border-white/[0.08] pt-3"><p className="px-2 pb-2 text-[10px] font-semibold tracking-[0.16em] text-white/35 uppercase">Local workspace</p><button type="button" onClick={() => { setSelectedPath(null); setDemo(demoScene()); setMeshModels([]); void meshStore.clear(); }} className="w-full rounded-lg border border-white/10 bg-white/[0.04] px-3 py-2 text-left text-xs text-white/70 transition hover:border-red-400/30 hover:bg-red-500/10 hover:text-red-200">Clear everything built here ({demo.parts.length - 1} parts{meshModels.length ? `, ${meshModels.length} meshes` : ""})</button></div>}
                 <div className="mt-4 border-t border-white/[0.08] pt-3"><p className="px-2 text-xs font-medium text-white/80">Shadows</p><p className="px-2 mt-0.5 text-[10px] text-white/40">Rendering quality</p><div className="mt-2 grid grid-cols-4 gap-1 rounded-xl border border-white/[0.08] bg-black/20 p-1">{(["none", "low", "medium", "high"] as const).map((quality) => { const active = quality === "none" ? viewportOptions.shadows === "none" : viewportOptions.shadows !== "none" && viewportOptions.shadowQuality === quality; return <button key={quality} type="button" aria-pressed={active} onClick={() => setViewportOptions((o) => quality === "none" ? { ...o, shadows: "none" } : { ...o, shadows: "soft", shadowQuality: quality })} className={`rounded-lg px-1 py-2 text-[10px] capitalize transition-colors ${active ? "bg-blox/25 text-blox-soft" : "text-white/50 hover:bg-white/[0.06] hover:text-white"}`}>{quality}</button>; })}</div></div>
                 <button type="button" onClick={() => setViewportOptions(DEFAULT_VIEWPORT_OPTIONS)} className="mt-4 w-full rounded-xl border border-white/[0.08] px-3 py-2 text-xs text-white/55 transition hover:bg-white/[0.05] hover:text-white">Reset viewport options</button></div>}
             </aside>

@@ -2,6 +2,7 @@
 
 import type { Model3DEvent } from "@/app/api/gen/model3d/route";
 import type { BuildT } from "@/lib/openrouter";
+import type { BlenderMesh } from "./blenderMesh";
 import { GenError } from "./dock/shared";
 
 export type BuildPartT = BuildT["parts"][number];
@@ -75,4 +76,4 @@ export type Generate3D = (
   body: Record<string, unknown>,
   handlers?: Model3DHandlers,
   options?: { autoAdd?: boolean },
-) => Promise<{ build: BuildT; bits: number; references: string[]; path?: string }>;
+) => Promise<{ build: BuildT; bits: number; references: string[]; path?: string; mesh?: BlenderMesh }>;

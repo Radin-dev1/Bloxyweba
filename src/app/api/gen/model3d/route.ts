@@ -12,7 +12,9 @@ import {
   extractJson,
   orFetch,
 } from "@/lib/openrouter";
+import { checkBuild, groundBuild } from "@/lib/buildCheck";
 import { createPartScanner } from "@/lib/partStream";
+import { pickSkills, skillBlock } from "@/lib/skills";
 import { findReferences, referenceBlock } from "@/lib/threeDCode";
 import { BIT_ESTIMATES, outOfBits, refund, reserve, resolveBilling, settle } from "@/lib/bits";
 
@@ -60,7 +62,13 @@ export async function POST(request: Request) {
     model,
     max_tokens: 32000,
     messages: [
-      { role: "system", content: codeFormat === "blender" ? BLENDER_3D_SYSTEM_PROMPT : ROBLOX_3D_SYSTEM_PROMPT },
+      {
+        role: "system",
+        content:
+          (codeFormat === "blender" ? BLENDER_3D_SYSTEM_PROMPT : ROBLOX_3D_SYSTEM_PROMPT) +
+          // Building know-how from the modeling skills (plus textures/maps when the prompt asks).
+          skillBlock([...new Set(["core", "modeling", ...pickSkills(prompt)] as const)]),
+      },
       ...(datasetHint ? [{ role: "system" as const, content: datasetHint }] : []),
       {
         role: "user",
@@ -73,10 +81,13 @@ export async function POST(request: Request) {
       },
     ],
   };
+  // Parsed, then set down on the ground (models often come back floating or sunk).
   const toBuild = (text: string) =>
-    codeFormat === "blender"
-      ? Build.parse(proceduralModelToBuild(ProceduralModel.parse(extractJson(text))))
-      : Build.parse(extractJson(text));
+    groundBuild(
+      codeFormat === "blender"
+        ? Build.parse(proceduralModelToBuild(ProceduralModel.parse(extractJson(text))))
+        : Build.parse(extractJson(text)),
+    );
   const settleBits = async (cost?: number) => (billing.charge ? await settle(billing.user.id, hold, cost) : 0);
   const refundBits = async () => {
     if (billing.charge) await refund(billing.user.id, hold);
@@ -94,7 +105,7 @@ export async function POST(request: Request) {
     const bits = await settleBits(data.usage?.cost);
     paid = true;
     const build = toBuild(data.choices?.[0]?.message?.content ?? "");
-    return Response.json({ build, bits, references });
+    return Response.json({ build, bits, references, check: checkBuild(build) });
   } catch (err) {
     if (!paid) await refundBits();
     return errorResponse(err);

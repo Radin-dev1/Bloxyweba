@@ -75,7 +75,7 @@ export function useChat({
   onTurnEnd?: (r: TurnResult) => void;
   onNeedsKey?: () => void;
   /** A model the agent built while Studio was offline: place it in the 3D workspace. */
-  onBuild?: (build: BuildT) => void;
+  onBuild?: (build: BuildT, id: string) => void;
 }) {
   // The app renders client-side only, so reading storage on first render is safe.
   const [messages, setMessages] = useState<Message[]>(loadHistory);
@@ -118,7 +118,7 @@ export function useChat({
       return;
     }
     if (event.type === "build") {
-      onBuildRef.current?.(event.build);
+      onBuildRef.current?.(event.build, event.id);
       return;
     }
     const index = messagesByJob.current.get(jobId);

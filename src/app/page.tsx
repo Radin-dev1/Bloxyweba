@@ -2,6 +2,7 @@ import HeroPrompt from "@/components/landing/HeroPrompt";
 import Nav from "@/components/landing/Nav";
 import Reveal from "@/components/landing/Reveal";
 import StudioMock from "@/components/landing/StudioMock";
+import ProviderLogo from "@/components/studio/ProviderLogo";
 import {
   ArrowUpRight,
   BloxyLogo,
@@ -16,6 +17,21 @@ import {
   Terminal,
   Undo,
 } from "@/components/landing/icons";
+
+const LABS = [
+  { id: "anthropic", name: "Anthropic", models: "Claude Opus 5.5 · Sonnet 5.5 · Fable 5.1" },
+  { id: "openai", name: "OpenAI", models: "GPT-6.1 Sol · GPT-6 Astra" },
+  { id: "google", name: "Google", models: "Gemini 4 Argon · 3.8 Flash" },
+  { id: "x-ai", name: "xAI", models: "Grok 4.7" },
+  { id: "deepseek", name: "DeepSeek", models: "DeepSeek V4 Pro" },
+  { id: "moonshotai", name: "Moonshot AI", models: "Kimi K3" },
+  { id: "qwen", name: "Qwen", models: "Qwen coder and chat models" },
+  { id: "meta-llama", name: "Meta", models: "Llama models" },
+  { id: "mistralai", name: "Mistral", models: "Mistral and Codestral" },
+  { id: "nvidia", name: "NVIDIA", models: "Nemotron 3 Ultra (free)" },
+  { id: "z-ai", name: "Z.ai", models: "GLM models" },
+  { id: "minimax", name: "MiniMax", models: "MiniMax models" },
+];
 
 const TOOL_GROUPS = [
   {
@@ -46,10 +62,10 @@ const TOOL_GROUPS = [
 
 const FAQ = [
   ["What is Bloxy?", "A website with an AI agent that edits your open Roblox Studio place through a small plugin."],
-  ["Is it free?", "Bloxy is free. You pay your AI provider directly for what you use, with your own API key."],
-  ["Where is my API key stored?", "Only in your browser. It is sent with each request and never saved on our server."],
+  ["Is it free?", "Yes. Sign in with Roblox for free bits every day, switch on Free models only to pay nothing at all, or add your own OpenRouter key."],
+  ["Do I need an API key?", "No. Bloxy runs on bits out of the box. An own key is optional, stays only in your browser, and is never saved on our server."],
   ["Can it break my game?", "Every change is one Ctrl+Z away in Studio, and it reads before it writes."],
-  ["Which models work?", "Claude (Opus, Sonnet, Haiku) and Gemini (2.5 Pro, Flash). ChatGPT is coming."],
+  ["Which models work?", "Every model on OpenRouter: Claude, GPT, Gemini, Grok, DeepSeek, Kimi, Qwen and hundreds more. Pick one from the model chip in the chat, or paste any model id."],
   ["Does it need HTTP enabled?", "No. Plugins can make requests; Studio just asks you once to allow Bloxy's site."],
   ["Does it write real code?", "Yes: typed, server-authoritative Luau that follows your existing project structure."],
   ["How do I start?", "Download the plugin, pair it with the code on the Studio page, then describe what you want."],
@@ -281,56 +297,78 @@ export default function Landing() {
         <div className="pointer-events-none absolute top-1/2 left-1/2 h-[60vh] w-[80vw] -translate-x-1/2 -translate-y-1/2 rounded-[100%] bg-[radial-gradient(closest-side,rgba(47,125,255,0.14),transparent)]" />
         <div className="relative mx-auto max-w-6xl">
           <Reveal className="mx-auto max-w-2xl text-center">
-            <Eyebrow>Bring your own key</Eyebrow>
+            <Eyebrow>Every model</Eyebrow>
             <h2 className="mt-5 font-display text-[clamp(2.2rem,5vw,4rem)] leading-[0.95] font-bold tracking-[-0.035em]">
-              The best models.
+              Every top model.
               <br />
-              <span className="text-white/35">Your key, your bill.</span>
+              <span className="text-white/35">One chat.</span>
             </h2>
+            <p className="mx-auto mt-6 max-w-xl text-base leading-relaxed text-white/50">
+              Bloxy runs on OpenRouter, so it works with 380+ models from every major lab. Pick one from the chat,
+              switch whenever you like, or paste any model id.
+            </p>
           </Reveal>
 
-          <div className="mt-16 grid grid-cols-1 gap-5 md:grid-cols-3">
+          <div className="mt-14 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
+            {LABS.map((lab, i) => (
+              <Reveal key={lab.id} delay={(i % 4) * 60}>
+                <div className="group flex h-full items-center gap-3.5 rounded-2xl border border-white/[0.07] bg-white/[0.02] p-4 transition-colors duration-500 hover:border-blox/30 hover:bg-blox/[0.04]">
+                  <ProviderLogo model={`${lab.id}/model`} className="size-11" />
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-semibold text-white">{lab.name}</p>
+                    <p className="truncate text-xs text-white/45">{lab.models}</p>
+                  </div>
+                </div>
+              </Reveal>
+            ))}
+          </div>
+          <Reveal delay={120}>
+            <p className="mt-5 text-center text-sm text-white/35">…and hundreds more, including new models the day they launch.</p>
+          </Reveal>
+
+          <div className="mt-14 grid grid-cols-1 gap-5 md:grid-cols-3">
             {[
-              { name: "Claude", by: "Anthropic", models: ["Opus 5.5", "Sonnet 5.5", "Haiku 5.5"], tag: "Default", soon: false },
-              { name: "Gemini", by: "Google", models: ["2.5 Pro", "2.5 Flash"], tag: "Supported", soon: false },
-              { name: "ChatGPT", by: "OpenAI", models: ["Coming soon"], tag: "Soon", soon: true },
-            ].map((m, i) => (
-              <Reveal key={m.name} delay={i * 90}>
-                <Bezel className={`h-full ${m.soon ? "opacity-50" : ""}`}>
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs text-white/40">{m.by}</span>
-                    <span
-                      className={`rounded-full px-2.5 py-0.5 text-[10px] font-medium tracking-[0.15em] uppercase ${
-                        i === 0 ? "bg-blox/20 text-blox-soft" : "bg-white/[0.06] text-white/50"
-                      }`}
-                    >
-                      {m.tag}
-                    </span>
-                  </div>
-                  <h3 className="mt-10 font-display text-4xl font-bold tracking-tight">{m.name}</h3>
-                  <div className="mt-4 flex flex-wrap gap-1.5">
-                    {m.models.map((x) => (
-                      <span key={x} className="rounded-full border border-white/10 px-2.5 py-0.5 text-xs text-white/55">
-                        {x}
-                      </span>
-                    ))}
-                  </div>
+              {
+                icon: Sparkle,
+                title: "Free bits every day",
+                text: "Sign in with Roblox and you get bits daily. Every message costs what the model really costs, nothing marked up.",
+              },
+              {
+                icon: Shield,
+                title: "Free models only",
+                text: "One switch limits Bloxy to OpenRouter's free models, so building costs nothing at all.",
+              },
+              {
+                icon: Key,
+                title: "Your own key, if you want",
+                text: "Optional. Keys stay in your browser's storage and ride along with each request; we never save them.",
+              },
+            ].map((f, i) => (
+              <Reveal key={f.title} delay={i * 90}>
+                <Bezel className="h-full">
+                  <span className="grid size-11 place-items-center rounded-full bg-blox/15 text-blox-soft">
+                    <f.icon className="size-5" />
+                  </span>
+                  <h3 className="mt-6 font-display text-xl font-bold tracking-tight">{f.title}</h3>
+                  <p className="mt-2 text-sm leading-relaxed text-white/50">{f.text}</p>
                 </Bezel>
               </Reveal>
             ))}
           </div>
 
-          <Reveal delay={200} className="mx-auto mt-8 max-w-3xl">
-            <div className="flex flex-col items-start gap-4 rounded-2xl border border-white/[0.07] bg-white/[0.02] p-5 sm:flex-row sm:items-center">
-              <span className="grid size-11 shrink-0 place-items-center rounded-full bg-signal/10 text-signal">
-                <Shield className="size-5" />
+          <Reveal delay={150} className="mt-12 flex flex-wrap justify-center gap-3">
+            <a
+              href="/chat"
+              className="flex items-center gap-2 rounded-full bg-blox py-2 pr-2 pl-5 text-sm font-medium text-white shadow-[inset_0_1px_1px_rgba(255,255,255,0.3)] transition-transform active:scale-[0.97]"
+            >
+              Try it in Chat
+              <span className="grid size-7 place-items-center rounded-full bg-white/15">
+                <ArrowUpRight className="size-3.5" />
               </span>
-              <p className="text-sm leading-relaxed text-white/60">
-                <span className="text-white">Your key never leaves your browser&apos;s storage.</span> It rides along
-                with each request to the AI provider and is never written to our server.
-              </p>
-              <Key className="ml-auto hidden size-5 shrink-0 text-white/25 sm:block" />
-            </div>
+            </a>
+            <a href="/studio" className="rounded-full border border-white/12 px-5 py-2 text-sm text-white/75 hover:bg-white/[0.05] hover:text-white">
+              Open Studio
+            </a>
           </Reveal>
         </div>
       </section>

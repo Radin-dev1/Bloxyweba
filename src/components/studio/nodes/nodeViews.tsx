@@ -398,6 +398,20 @@ function Model3DNode({ id, data, selected }: NodeProps<FlowNode & { type: "model
           <ModelPreview build={data.build} />
         </div>
       )}
+      {data.mesh && (
+        <div className="nodrag nowheel nopan mb-2 overflow-hidden rounded-xl border border-white/[0.07]">
+          {data.mesh.preview ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={data.mesh.preview} alt="Blender render" className="aspect-square w-full object-cover" />
+          ) : null}
+          <div className="flex items-center justify-between bg-black/40 px-2.5 py-1.5 text-[10px] text-white/60">
+            <span>Blender mesh · {data.mesh.tris.toLocaleString()} tris</span>
+            <a href={data.mesh.url} download={`${data.build?.name ?? "model"}.glb`} className="text-blox-soft hover:underline">
+              Download .glb
+            </a>
+          </div>
+        </div>
+      )}
       {data.build && codeFormat === "blender" && script && (
         <div className="nodrag nowheel nopan mb-2 max-h-48 overflow-auto rounded-xl border border-white/[0.07] bg-black/35 p-3"><pre className="whitespace-pre-wrap break-words font-mono text-[10px] leading-relaxed text-white/70">{data.build.blender_script}</pre><button type="button" onClick={() => void navigator.clipboard?.writeText(script)} className="mt-2 rounded-md border border-white/10 px-2 py-1 text-[10px] text-white/65 hover:bg-white/[0.07]">Copy Blender code</button></div>
       )}
@@ -408,7 +422,7 @@ function Model3DNode({ id, data, selected }: NodeProps<FlowNode & { type: "model
         </p>
       )}
       <PromptField id={id} value={data.prompt} placeholder="Describe the 3D object… e.g. a low-poly red pickup truck" />
-      <p className="mt-1.5 text-[10px] leading-relaxed text-white/35">{codeFormat === "blender" ? "Generates a Blender 5.0 procedural bpy script using a related 3DCode training example as additional code context." : "Generates Roblox part geometry as structured code. Pick an OpenRouter coding model, then insert the validated result into the scene."}</p>
+      <p className="mt-1.5 text-[10px] leading-relaxed text-white/35">{codeFormat === "blender" ? "Writes a Blender procedural script (with 3DCode dataset references) and, when Blender is installed, builds the real mesh." : "Generates Roblox part geometry as structured code. Pick an OpenRouter coding model, then insert the validated result into the scene."}</p>
       <ModelField id={id} value={data.model} kind="model3d" />
       <ErrorLine error={data.error} />
     </Shell>

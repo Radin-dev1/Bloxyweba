@@ -223,6 +223,7 @@ function loadSaved(): { nodes: FlowNode[]; edges: Edge[] } {
 function forStorage(nodes: FlowNode[]) {
   return nodes.map((n) => {
     const d = { ...n.data } as Record<string, unknown>;
+    delete d.mesh; // object URLs and big previews don't survive a reload
     for (const k of ["output", "jobId", "phase"]) {
       const v = d[k];
       if (typeof v === "string" && (v.startsWith("blob:") || v.length > MAX_SAVED_OUTPUT)) delete d[k];
@@ -493,7 +494,12 @@ function Editor({ send, stop, busy, connected, openrouterKey, generate3D, onInse
               if (err.status === 400 && err.message.includes("OpenRouter")) onNeedsKey();
               throw err;
             });
-            patch(id, { build: r.build, inserted: r.path, phase: undefined });
+            patch(id, {
+              build: r.build,
+              inserted: r.path,
+              phase: undefined,
+              mesh: r.mesh ? { url: r.mesh.url, preview: r.mesh.preview, tris: r.mesh.tris } : undefined,
+            });
           } else {
             const r = await post<{ build: BuildT }>("/api/gen/model3d", body);
             patch(id, { build: r.build, inserted: undefined });

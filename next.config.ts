@@ -7,6 +7,7 @@ const nextConfig: NextConfig = {
   outputFileTracingIncludes: {
     "/api/plugin/download": ["./plugin/Bloxy.server.lua"],
     "/api/gen/model3d": ["./data/3dcode/index.json"],
+    "/api/gen/blender": ["./blender/bloxy_runner.py"],
   },
   turbopack: {
     rules: {
