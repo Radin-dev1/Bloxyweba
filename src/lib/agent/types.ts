@@ -12,6 +12,8 @@ export type AgentEvent =
   | { type: "tool_result"; id: string; ok: boolean; preview: string }
   /** A model built while Studio is offline, for the browser to place in the 3D workspace. */
   | { type: "build"; id: string; build: BuildT }
+  /** A sculpted mesh (GLB, base64) from Blender, for the browser to place in the workspace. */
+  | { type: "mesh"; id: string; name: string; glb: string; tris: number; dims: [number, number, number] }
   | { type: "error"; message: string }
   | { type: "done" };
 

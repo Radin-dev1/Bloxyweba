@@ -6,6 +6,9 @@ import {
   makeStudioExecutor,
   OFFLINE_SYSTEM_PROMPT,
   OFFLINE_TOOLS,
+  SCULPT_NOTE,
+  SCULPT_TOOL,
+  sculptAvailable,
   PROVIDERS,
   runAgent,
   type AgentEvent,
@@ -80,15 +83,16 @@ export async function POST(request: Request) {
 
   // Drop empty turns (e.g. an assistant reply that was only tool calls) so providers don't reject them.
   const history = messages.filter((m) => m.content.trim() !== "");
-  // Load the skill packs this request needs (modeling, maps, textures), like skills on demand.
-  const skills = skillBlock(pickSkills(history.at(-1)?.content ?? ""));
-
   const { bridge } = await import("@/lib/bridge");
   // Without Studio the chat still works: it can talk, write Luau and build into the Bloxy workspace.
   const status = sessionId ? await bridge.getSessionStatus(sessionId).catch(() => null) : null;
   const studioConnected = !!status?.connected;
   // No plugin? Roblox Studio's own MCP server (local only) may still reach an open Studio.
   const mcp = studioConnected ? null : await mcpStudio();
+  // Load the skill packs this request needs (modeling, maps, textures...), like skills on demand.
+  // Sculpting only when this run can actually sculpt (offline mode with Blender on this machine).
+  const canSculpt = !studioConnected && !mcp && sculptAvailable();
+  const skills = skillBlock(pickSkills(history.at(-1)?.content ?? "").filter((id) => id !== "sculpting" || canSculpt));
   const jobCreated = sessionId ? await bridge.createChatJob(sessionId, jobId).catch(() => false) : false;
   if (!sessionId || !jobCreated) return streamReply(request, { provider, model, apiKey, history, billing, skills, mcp });
 
@@ -215,7 +219,13 @@ async function agentSetup(
       // Fall through to offline if the MCP server went away.
     }
   }
-  return { executeTool: makeOfflineExecutor(emit), tools: OFFLINE_TOOLS, system: OFFLINE_SYSTEM_PROMPT + skills };
+  // With Blender on this machine the agent can also sculpt organic meshes.
+  const sculpt = sculptAvailable();
+  return {
+    executeTool: makeOfflineExecutor(emit),
+    tools: sculpt ? [...OFFLINE_TOOLS, SCULPT_TOOL] : OFFLINE_TOOLS,
+    system: OFFLINE_SYSTEM_PROMPT + (sculpt ? SCULPT_NOTE : "") + skills,
+  };
 }
 
 /** Runs the agent (MCP or offline mode) and streams its events back as newline-delimited JSON. */

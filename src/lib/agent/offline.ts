@@ -1,7 +1,8 @@
 import { z } from "zod";
-import { checkBuild, groundBuild } from "@/lib/buildCheck";
+import { checkBuild, groundBuild, normalizeShapes } from "@/lib/buildCheck";
 import { Build } from "@/lib/openrouter";
 import { SYSTEM_PROMPT } from "@/lib/tools";
+import { runSculpt } from "./sculpt";
 import type { AgentEvent, AgentToolSpec, ToolExecutor } from "./types";
 
 /**
@@ -19,7 +20,8 @@ export const OFFLINE_TOOLS: AgentToolSpec[] = [
       "Place a model in the user's Bloxy 3D workspace (the preview in the website). Build it from Roblox parts: " +
       "shape Block | Ball | Cylinder | Wedge, size in studs [x, y, z], position = part centre in studs (Y is up, the ground's top is y = 0), " +
       "rotation in degrees [x, y, z], color as hex, a Roblox Material name, transparency 0-1. Up to 400 parts. " +
-      "Calling it again with the same model name replaces that model.",
+      "Calling it again with the same model name replaces that model. " +
+      "Ball parts are ALWAYS perfect spheres (diameter = the smallest size value; a stretched size just makes a smaller sphere) and Cylinders are always round (length on X, diameter = the smaller of Y/Z). Long round shapes (pickle, capsule, sausage, banana, limb, log) = a Cylinder body plus a Ball of the same diameter on each end. Surface details (bumps, buttons, rivets, eyes) must touch their surface: put their centre about 0.3 of their own size outside the surface, never in the air.",
     parameters: buildSchema,
   },
 ];
@@ -37,7 +39,12 @@ Mention once, briefly, that connecting the Bloxy Studio plugin lets you build di
 
 /** Runs build_model by sending the build to the browser; every other tool explains Studio isn't connected. */
 export function makeOfflineExecutor(emit: (e: AgentEvent) => void): ToolExecutor {
-  return async (callId, name, input) => {
+  return async (callId, name, input, signal) => {
+    if (name === "sculpt_model") {
+      const r = await runSculpt(callId, input, emit, signal);
+      emit({ type: "tool_result", id: callId, ok: r.ok, preview: r.content.slice(0, 2000) });
+      return r;
+    }
     let ok = false;
     let content: string;
     if (name !== "build_model") {
@@ -51,7 +58,7 @@ export function makeOfflineExecutor(emit: (e: AgentEvent) => void): ToolExecutor
         const build = groundBuild(parsed.data);
         emit({ type: "build", id: callId, build });
         ok = true;
-        const check = checkBuild(build);
+        const check = checkBuild(build, normalizeShapes(parsed.data).stretched);
         content =
           `Placed "${build.name}" in the user's Bloxy workspace. ${check.summary}` +
           (check.problems.length ? "\nFix these by calling build_model again with the same name." : "");

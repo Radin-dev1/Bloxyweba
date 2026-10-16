@@ -1,6 +1,6 @@
 import { existsSync } from "fs";
 import path from "path";
-import { checkBuild, groundBuild } from "./buildCheck";
+import { checkBuild, groundBuild, normalizeShapes } from "./buildCheck";
 import { Build, type BuildT } from "./openrouter";
 import { SYSTEM_PROMPT } from "./tools";
 import type { AgentEvent, AgentToolSpec, ToolExecutor } from "./agent/types";
@@ -218,7 +218,7 @@ export async function mcpTools(buildModelSchema: Json): Promise<AgentToolSpec[]>
     {
       name: "build_model",
       description:
-        "Build a model in the open Studio place from Roblox parts (anchored, one undo step, selected when done). Shape Block | Ball | Cylinder | Wedge, size in studs, position = part centre relative to the model (Y up, the model's ground is y = 0), rotation in degrees, color hex, Roblox Material name, transparency 0-1. Up to 400 parts; the same name replaces that model in place.",
+        "Build a model in the open Studio place from Roblox parts (anchored, one undo step, selected when done). Shape Block | Ball | Cylinder | Wedge, size in studs, position = part centre relative to the model (Y up, the model's ground is y = 0), rotation in degrees, color hex, Roblox Material name, transparency 0-1. Up to 400 parts; the same name replaces that model in place. Ball parts are ALWAYS perfect spheres (diameter = the smallest size value; a stretched size just makes a smaller sphere) and Cylinders are always round (length on X, diameter = the smaller of Y/Z). Long round shapes (pickle, capsule, sausage, banana, limb, log) = a Cylinder body plus a Ball of the same diameter on each end. Surface details (bumps, buttons, rivets, eyes) must touch their surface: put their centre about 0.3 of their own size outside the surface, never in the air.",
       parameters: buildModelSchema,
     },
   ];
@@ -247,7 +247,7 @@ export function makeMcpExecutor(studioId: string, emit: (e: AgentEvent) => void)
           const build = groundBuild(parsed.data);
           const r = await studioMcp.call("execute_luau", { code: buildToLuau(build), studio_id: studioId });
           ok = r.ok;
-          const check = checkBuild(build);
+          const check = checkBuild(build, normalizeShapes(parsed.data).stretched);
           content = r.ok
             ? `${r.text.trim()}\n${check.summary}${check.problems.length ? "\nFix these by calling build_model again with the same name." : ""}`
             : r.text;

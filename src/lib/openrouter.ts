@@ -40,7 +40,7 @@ Rules:
 - "rotation" is Roblox orientation in degrees (order Y, X, Z).
 - Cylinders run along their X axis: size [length, diameter, diameter]. For an upright cylinder use rotation [0, 0, 90].
 - Wedge: flat bottom, tall face at +Z, slope going down toward -Z.
-- Ball uses the smallest size component as its diameter.
+- Ball parts are ALWAYS perfect spheres (diameter = the smallest size value; a stretched size just makes a smaller sphere) and Cylinders are always round (length on X, diameter = the smaller of Y/Z). Long round shapes (pickle, capsule, sausage, banana, limb, log) = a Cylinder body plus a Ball of the same diameter on each end. Surface details (bumps, buttons, rivets, eyes) must touch their surface: put their centre about 0.3 of their own size outside the surface, never in the air.
 - material is a Roblox Material name: Plastic, SmoothPlastic, Neon, Wood, WoodPlanks, Metal, DiamondPlate, Glass, Brick, Concrete, Grass, Sand, Slate, Marble, Granite, Fabric, Ice, Foil.
 - Use 12 to 200 parts. Make it clearly recognizable: good proportions, a tight color palette, details like trims, handles, windows. Parts should touch or overlap; nothing floats unless it should.`;
 

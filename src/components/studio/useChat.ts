@@ -59,6 +59,8 @@ function saveHistory(messages: Message[]) {
   } catch {}
 }
 
+export type SculptedMesh = Extract<AgentEvent, { type: "mesh" }>;
+
 /**
  * One conversation with the agent. `send` resolves when the turn ends, so the
  * node editor can run steps one after another through the same history.
@@ -69,6 +71,7 @@ export function useChat({
   onTurnEnd,
   onNeedsKey,
   onBuild,
+  onMesh,
 }: {
   sessionId: string | null;
   settings: Settings;
@@ -76,6 +79,8 @@ export function useChat({
   onNeedsKey?: () => void;
   /** A model the agent built while Studio was offline: place it in the 3D workspace. */
   onBuild?: (build: BuildT, id: string) => void;
+  /** A mesh the agent sculpted in Blender (GLB as base64): place it in the 3D workspace. */
+  onMesh?: (mesh: SculptedMesh) => void;
 }) {
   // The app renders client-side only, so reading storage on first render is safe.
   const [messages, setMessages] = useState<Message[]>(loadHistory);
@@ -83,9 +88,11 @@ export function useChat({
   const [activeJob, setActiveJob] = useState<ActiveJob | null>(null);
   const messagesRef = useRef<Message[]>(messages);
   const onBuildRef = useRef(onBuild);
+  const onMeshRef = useRef(onMesh);
   useEffect(() => {
     onBuildRef.current = onBuild;
-  }, [onBuild]);
+    onMeshRef.current = onMesh;
+  }, [onBuild, onMesh]);
   const busyRef = useRef(false);
   const jobRef = useRef<ActiveJob | null>(null);
   const messagesByJob = useRef(new Map<string, number>());
@@ -119,6 +126,10 @@ export function useChat({
     }
     if (event.type === "build") {
       onBuildRef.current?.(event.build, event.id);
+      return;
+    }
+    if (event.type === "mesh") {
+      onMeshRef.current?.(event);
       return;
     }
     const index = messagesByJob.current.get(jobId);

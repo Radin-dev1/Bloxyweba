@@ -8,6 +8,7 @@ import type { AgentEvent, AgentParams, ProviderId, ToolExecutor } from "./types"
 export * from "./types";
 export { PROVIDERS } from "./providers";
 export { OFFLINE_SYSTEM_PROMPT, OFFLINE_TOOLS, makeOfflineExecutor } from "./offline";
+export { SCULPT_NOTE, SCULPT_TOOL, sculptAvailable } from "./sculpt";
 
 const MAX_TOOL_RESULT_CHARS = 60_000;
 

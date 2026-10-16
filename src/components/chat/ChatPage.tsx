@@ -9,15 +9,17 @@ import AccountPill from "../studio/AccountPill";
 import { loadLocalPlace, saveLocalPlace } from "../studio/demoScene";
 import ModelPicker from "../studio/ModelPicker";
 import { withFreeOnly } from "../studio/freeModels";
+import { meshStore, toBytes, type WorkspaceMesh } from "../studio/blenderMesh";
 import { buildToParts } from "../studio/nodes/ModelPreview";
 import { MessageView, SettingsDialog } from "../studio/parts";
 import { useAccount } from "../studio/useAccount";
-import { useChat } from "../studio/useChat";
+import { useChat, type SculptedMesh } from "../studio/useChat";
 import { useStudioSession } from "../useStudioSession";
 import { useStudioMcp } from "../studio/useStudioMcp";
 import { useSettings } from "../useSettings";
 
 const ModelPreview = dynamic(() => import("../studio/nodes/ModelPreview"), { ssr: false });
+const GlbPreview = dynamic(() => import("../studio/nodes/GlbPreview"), { ssr: false });
 
 const STARTERS = [
   { title: "Build a cozy cottage", text: "Build a cozy cottage with a steep red roof, a chimney and a little garden fence" },
@@ -27,6 +29,17 @@ const STARTERS = [
 ];
 
 const BUILDS_KEY = "bloxy.chat.builds.v1";
+/** Which chat tool call sculpted which mesh; the GLBs themselves live in IndexedDB by name. */
+const MESHES_KEY = "bloxy.chat.meshes.v1";
+type MeshCard = { name: string; tris: number };
+
+function loadMeshCards(): Record<string, MeshCard> {
+  try {
+    return JSON.parse(localStorage.getItem(MESHES_KEY) || "{}") as Record<string, MeshCard>;
+  } catch {
+    return {};
+  }
+}
 
 function loadBuilds(): Record<string, BuildT> {
   try {
@@ -55,6 +68,34 @@ export default function ChatPage() {
   const [showSettings, setShowSettings] = useState(false);
   const { account, refresh: refreshAccount, signOut } = useAccount();
   const [builds, setBuilds] = useState<Record<string, BuildT>>(loadBuilds);
+  const [meshCards, setMeshCards] = useState<Record<string, MeshCard>>(loadMeshCards);
+  // Sculpted meshes saved in this browser, by name (shared with the Studio workspace).
+  const [stored, setStored] = useState<WorkspaceMesh[]>([]);
+  useEffect(() => {
+    let alive = true;
+    void meshStore.all().then((m) => alive && setStored(m));
+    return () => {
+      alive = false;
+    };
+  }, []);
+  /** Saves a sculpted mesh into the local workspace (beside everything else) and shows it inline. */
+  const placeMesh = (m: SculptedMesh) => {
+    const glb = toBytes(m.glb);
+    const url = URL.createObjectURL(new Blob([glb as BlobPart], { type: "model/gltf-binary" }));
+    const place = loadLocalPlace().parts.filter((p) => !/(^|\.)Baseplate$/.test(p.path));
+    let maxX = place.reduce((x, p) => Math.max(x, p.cframe[0] + Math.max(...p.size) / 2), -Infinity);
+    for (const s of stored) if (s.name !== m.name) maxX = Math.max(maxX, s.origin[0] + Math.max(s.dims[0], s.dims[1]) / 2);
+    const origin = stored.find((s) => s.name === m.name)?.origin ?? (maxX === -Infinity ? [0, 0, 0] : [Math.ceil(maxX + 20), 0, 0]);
+    void meshStore.put({ name: m.name, glb, origin, dims: m.dims, tris: m.tris });
+    setStored((all) => [...all.filter((s) => s.name !== m.name), { name: m.name, url, origin, dims: m.dims, tris: m.tris }]);
+    setMeshCards((c) => {
+      const next = { ...c, [m.id]: { name: m.name, tris: m.tris } };
+      try {
+        localStorage.setItem(MESHES_KEY, JSON.stringify(next));
+      } catch {}
+      return next;
+    });
+  };
   const chat = useChat({
     sessionId,
     settings,
@@ -72,6 +113,7 @@ export default function ChatPage() {
         return next;
       });
     },
+    onMesh: (mesh) => placeMesh(mesh),
   });
   const [input, setInput] = useState("");
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -96,6 +138,17 @@ export default function ChatPage() {
   const previews = useMemo(
     () => messages.map((m) => m.tools.map((t) => builds[t.id]).filter(Boolean) as BuildT[]),
     [messages, builds],
+  );
+  const meshPreviews = useMemo(
+    () =>
+      messages.map((m) =>
+        m.tools.flatMap((t) => {
+          const card = meshCards[t.id];
+          const url = card && stored.find((s) => s.name === card.name)?.url;
+          return card && url ? [{ ...card, url }] : [];
+        }),
+      ),
+    [messages, meshCards, stored],
   );
 
   return (
@@ -164,6 +217,21 @@ export default function ChatPage() {
                       <div className="flex items-center justify-between bg-[#111318] px-3 py-2 text-xs text-white/60">
                         <span>
                           {b.name} · {b.parts.length} parts
+                        </span>
+                        <Link href="/studio" className="text-blox-soft hover:underline">
+                          Open in workspace
+                        </Link>
+                      </div>
+                    </div>
+                  ))}
+                  {meshPreviews[i]?.map((mesh, j) => (
+                    <div key={`m${j}`} className="mt-3 ml-10 overflow-hidden rounded-2xl border border-white/10 bg-[#dfe9f8]">
+                      <div className="h-72">
+                        <GlbPreview url={mesh.url} />
+                      </div>
+                      <div className="flex items-center justify-between bg-[#111318] px-3 py-2 text-xs text-white/60">
+                        <span>
+                          {mesh.name} · sculpted mesh · {mesh.tris.toLocaleString()} triangles
                         </span>
                         <Link href="/studio" className="text-blox-soft hover:underline">
                           Open in workspace

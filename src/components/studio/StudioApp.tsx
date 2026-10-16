@@ -16,9 +16,9 @@ import { buildToParts } from "./nodes/ModelPreview";
 import { streamModel3d, type Model3DHandlers } from "./model3dStream";
 import { useLiveBuild } from "./useLiveBuild";
 import { useStudioMcp } from "./useStudioMcp";
-import { blenderAvailable, meshStore, runBlender, type WorkspaceMesh } from "./blenderMesh";
+import { blenderAvailable, meshStore, runBlender, toBytes, type WorkspaceMesh } from "./blenderMesh";
 import { applyEdit, toStudioProperties, type PartEdit } from "./sceneMath";
-import { useChat } from "./useChat";
+import { useChat, type SculptedMesh } from "./useChat";
 import AccountPill from "./AccountPill";
 import ModelPicker from "./ModelPicker";
 import { FREE_DEFAULT, withFreeOnly } from "./freeModels";
@@ -134,6 +134,8 @@ export default function StudioApp() {
     onNeedsKey: () => setShowSettings(true),
     // Offline, the agent builds into the local workspace (insertBuild is declared below; this runs later).
     onBuild: (build) => void playIntoWorkspace(build),
+    // A mesh the agent sculpted in Blender lands in the local workspace (placeMesh is declared below).
+    onMesh: (mesh) => placeMesh(mesh),
   });
 
   // Before Studio connects, a demo place you can click around and edit locally.
@@ -415,6 +417,16 @@ export default function StudioApp() {
     } finally {
       liveBuild.end();
     }
+  };
+
+  /** Places a sculpted mesh from the chat; sculpting the same name again replaces it in place. */
+  const placeMesh = (m: SculptedMesh) => {
+    const glb = toBytes(m.glb);
+    const url = URL.createObjectURL(new Blob([glb as BlobPart], { type: "model/gltf-binary" }));
+    const origin = meshModels.find((x) => x.name === m.name)?.origin ?? nextOrigin();
+    void meshStore.put({ name: m.name, glb, origin, dims: m.dims, tris: m.tris });
+    setMeshModels((all) => [...all.filter((x) => x.name !== m.name), { name: m.name, url, origin, dims: m.dims, tris: m.tris }]);
+    focusOn(origin);
   };
 
   /** Adds one Roblox primitive, spread out so repeated adds don't stack. */

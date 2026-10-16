@@ -67,7 +67,7 @@ export async function POST(request: Request) {
         content:
           (codeFormat === "blender" ? BLENDER_3D_SYSTEM_PROMPT : ROBLOX_3D_SYSTEM_PROMPT) +
           // Building know-how from the modeling skills (plus textures/maps when the prompt asks).
-          skillBlock([...new Set(["core", "modeling", ...pickSkills(prompt)] as const)]),
+          skillBlock([...new Set(["core", "modeling", ...pickSkills(prompt).filter((id) => id !== "sculpting")] as const)]),
       },
       ...(datasetHint ? [{ role: "system" as const, content: datasetHint }] : []),
       {

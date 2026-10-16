@@ -33,13 +33,37 @@ function boxOf(p: BuildT["parts"][number]): Box {
 
 const GAP = 0.2; // studs: closer than this counts as touching
 
+/**
+ * Sizes as Roblox actually draws them: a Ball is always a sphere (diameter = smallest size),
+ * a Cylinder is always round (diameter = the smaller of Y and Z, length = X).
+ */
+export function normalizeShapes(build: BuildT) {
+  const stretched: string[] = [];
+  const parts = build.parts.map((p) => {
+    const [x, y, z] = p.size;
+    if (p.shape === "Ball") {
+      const d = Math.min(x, y, z);
+      if (Math.max(x, y, z) - d > 0.05) stretched.push(p.name);
+      return { ...p, size: [d, d, d] as [number, number, number] };
+    }
+    if (p.shape === "Cylinder") {
+      const d = Math.min(y, z);
+      if (Math.abs(y - z) > 0.05) stretched.push(p.name);
+      return { ...p, size: [x, d, d] as [number, number, number] };
+    }
+    return p;
+  });
+  return { build: { ...build, parts }, stretched };
+}
+
 function touching(a: Box, b: Box) {
   for (let i = 0; i < 3; i++) if (a.min[i] > b.max[i] + GAP || b.min[i] > a.max[i] + GAP) return false;
   return true;
 }
 
-/** Moves a build so its lowest point sits exactly on the ground (y = 0). */
-export function groundBuild(build: BuildT): BuildT {
+/** Fixes ball/cylinder sizes to what Roblox draws, then sets the build on the ground (y = 0). */
+export function groundBuild(input: BuildT): BuildT {
+  const build = normalizeShapes(input).build;
   if (!build.parts.length) return build;
   const lowest = Math.min(...build.parts.map((p) => boxOf(p).min[1]));
   if (Math.abs(lowest) < 0.05) return build;
@@ -49,7 +73,9 @@ export function groundBuild(build: BuildT): BuildT {
   };
 }
 
-export function checkBuild(build: BuildT) {
+export function checkBuild(input: BuildT, stretchedBefore: string[] = []) {
+  const { build, stretched: stretchedNow } = normalizeShapes(input);
+  const stretched = [...new Set([...stretchedBefore, ...stretchedNow])];
   const boxes = build.parts.map(boxOf);
   const lo = [0, 1, 2].map((i) => Math.min(...boxes.map((b) => b.min[i])));
   const hi = [0, 1, 2].map((i) => Math.max(...boxes.map((b) => b.max[i])));
@@ -86,6 +112,10 @@ export function checkBuild(build: BuildT) {
 
   const list = (names: string[]) => names.slice(0, 6).join(", ") + (names.length > 6 ? ` and ${names.length - 6} more` : "");
   const problems: string[] = [];
+  if (stretched.length)
+    problems.push(
+      `${stretched.length} Ball/Cylinder part(s) had stretched sizes (${list(stretched)}), but Roblox balls are always perfect spheres (diameter = smallest size) and cylinders are always round, so they came out smaller and rounder than planned. For long round shapes (pickle, capsule, sausage, banana, limbs, logs) use a Cylinder for the body with a Ball of the same diameter on each end; for an egg or blob, overlap several Balls of different sizes.`,
+    );
   if (floating.length)
     problems.push(`${floating.length} part(s) float with nothing under or beside them: ${list(floating)}. Rest them on something (fine only if they are intentional obby platforms).`);
   if (sunk.length) problems.push(`${sunk.length} part(s) go below the ground: ${list(sunk)}.`);
