@@ -5,7 +5,7 @@ import { Edges, GizmoHelper, GizmoViewcube, OrbitControls, TransformControls, us
 import { Suspense, useEffect, useLayoutEffect, useMemo, useRef } from "react";
 import * as THREE from "three";
 import type { OrbitControls as OrbitControlsImpl } from "three-stdlib";
-import { DEFAULT_ENVIRONMENT, GROUND_PRESETS, SKY_PRESETS, drawGround, drawSky, type Environment } from "./environment";
+import { DEFAULT_ENVIRONMENT, GROUND_PRESETS, SKY_PRESETS, type Environment } from "./environment";
 import type { PartEdit } from "./sceneMath";
 import type { Scene, ScenePart } from "./useScene";
 
@@ -157,13 +157,17 @@ function BaseplateMesh({
   env: Environment;
   onPick: () => void;
 }) {
-  // The Environment panel can swap the ground look; "roblox" keeps Studio's own texture.
-  const groundColor = env.groundColor ?? (env.ground === "roblox" ? `#${part.color}` : GROUND_PRESETS[env.ground].color);
-  const base = useTexture(BASEPLATE_TEXTURE_URL);
+  // The Environment panel can swap the ground: "roblox" keeps Studio's own texture, "plain" is a
+  // flat color, the rest are real photo textures (a chosen color tints the photo).
+  const preset = GROUND_PRESETS[env.ground];
+  const photoUrl = preset.image;
+  const groundColor = env.groundColor ?? (photoUrl ? preset.color : env.ground === "roblox" ? `#${part.color}` : preset.color);
+  const tint = photoUrl ? (env.groundColor ?? "#ffffff") : "#ffffff";
+  const base = useTexture(photoUrl ?? BASEPLATE_TEXTURE_URL);
   const gl = useThree((s) => s.gl);
   const topTexture = useMemo(() => {
-    if (env.ground !== "roblox") {
-      const t = new THREE.CanvasTexture(drawGround(env.ground, groundColor));
+    if (photoUrl) {
+      const t = base.clone();
       t.wrapS = t.wrapT = THREE.RepeatWrapping;
       t.colorSpace = THREE.SRGBColorSpace;
       t.anisotropy = gl.capabilities.getMaxAnisotropy();
@@ -182,7 +186,7 @@ function BaseplateMesh({
     // into a single opaque texture so there is never a second coplanar surface to z-fight.
     ctx.fillStyle = groundColor;
     ctx.fillRect(0, 0, w, h);
-    if (img && showGrid) {
+    if (img && showGrid && env.ground === "roblox") {
       const mask = document.createElement("canvas");
       mask.width = w;
       mask.height = h;
@@ -201,7 +205,7 @@ function BaseplateMesh({
     t.repeat.set(part.size[0] / (env.tile || BASEPLATE_STUDS_PER_TILE), part.size[2] / (env.tile || BASEPLATE_STUDS_PER_TILE));
     t.needsUpdate = true;
     return t;
-  }, [base, gl, groundColor, part.size, showGrid, env.ground, env.tile]);
+  }, [base, gl, groundColor, part.size, showGrid, env.ground, env.tile, photoUrl]);
 
   const materials = useMemo(() => {
     const side = new THREE.MeshStandardMaterial({
@@ -211,12 +215,13 @@ function BaseplateMesh({
     });
     const top = new THREE.MeshStandardMaterial({
       map: topTexture,
-      roughness: 0.6,
+      color: tint,
+      roughness: photoUrl ? 0.9 : 0.6,
       metalness: 0,
     });
     // BoxGeometry material groups: 0=+X, 1=-X, 2=+Y (top), 3=-Y (bottom), 4=+Z, 5=-Z
     return [side, side, top, side, side, side];
-  }, [groundColor, topTexture]);
+  }, [groundColor, topTexture, tint, photoUrl]);
 
   useEffect(
     () => () => {
@@ -445,20 +450,29 @@ function GradientSky() {
   return <primitive attach="background" object={texture} />;
 }
 
-/** Environment-panel skies: a procedural equirectangular panorama that turns with the camera. */
-function ProceduralSky({ sky }: { sky: Environment["sky"] }) {
+/** Environment-panel skies: a real 360° panorama that turns with the camera. */
+function PhotoSky({ url }: { url: string }) {
+  const loaded = useTexture(url);
   const texture = useMemo(() => {
-    const t = new THREE.CanvasTexture(drawSky(sky));
+    const t = loaded.clone();
     t.mapping = THREE.EquirectangularReflectionMapping;
     t.colorSpace = THREE.SRGBColorSpace;
+    t.needsUpdate = true;
     return t;
-  }, [sky]);
+  }, [loaded]);
   useEffect(() => () => texture.dispose(), [texture]);
   return <primitive attach="background" object={texture} />;
 }
 
 function SkyBackground({ sky = "studio" }: { sky?: Environment["sky"] }) {
-  if (sky !== "studio") return <ProceduralSky sky={sky} />;
+  const image = SKY_PRESETS[sky].image;
+  if (image) {
+    return (
+      <Suspense fallback={<GradientSky />}>
+        <PhotoSky url={image} />
+      </Suspense>
+    );
+  }
   if (!HAS_SKYBOX) return <GradientSky />;
   return (
     <Suspense fallback={<GradientSky />}>

@@ -673,22 +673,6 @@ function ChatDock({
           </div>
         )}
 
-        {/* Starter ideas while the chat is empty */}
-        {messages.length === 0 && !input && (
-          <div className="flex flex-wrap justify-center gap-1.5">
-            {CHAT_STARTERS.map((idea) => (
-              <button
-                key={idea}
-                type="button"
-                onClick={() => setInput(idea)}
-                className="rounded-full border border-white/10 bg-[#0e1014]/75 px-3 py-1.5 text-[11.5px] text-white/65 backdrop-blur-xl transition-colors hover:border-blox/40 hover:text-white"
-              >
-                {idea}
-              </button>
-            ))}
-          </div>
-        )}
-
         {/* Prompt bar */}
         <form
           onSubmit={(e) => {
@@ -721,6 +705,21 @@ function ChatDock({
               className="max-h-40 min-h-9 flex-1 resize-none bg-transparent py-1.5 text-[15px] leading-relaxed text-white outline-none placeholder:text-white/30"
             />
           </div>
+          {/* Starter ideas inside the prompt box while the chat is empty */}
+          {messages.length === 0 && !input && (
+            <div className="mt-1 flex gap-1.5 overflow-x-auto pb-0.5 pl-1 [scrollbar-width:none]">
+              {CHAT_STARTERS.map((idea) => (
+                <button
+                  key={idea}
+                  type="button"
+                  onClick={() => setInput(idea)}
+                  className="shrink-0 rounded-lg border border-white/[0.08] bg-white/[0.04] px-2.5 py-1 text-[11.5px] text-white/60 transition-colors hover:border-blox/40 hover:text-white"
+                >
+                  {idea}
+                </button>
+              ))}
+            </div>
+          )}
           <div className="mt-1.5 flex items-center justify-between gap-2 pl-1">
             <div className="flex min-w-0 items-center gap-1.5 text-[11px] text-white/40">
               <ModelPicker value={modelLabel} onPick={onPickModel} />

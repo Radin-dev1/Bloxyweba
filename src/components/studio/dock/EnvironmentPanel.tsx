@@ -1,12 +1,11 @@
 "use client";
+/* eslint-disable @next/next/no-img-element -- tiny static preset thumbnails */
 
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import {
   DEFAULT_ENVIRONMENT,
   GROUND_PRESETS,
   SKY_PRESETS,
-  drawGround,
-  drawSky,
   type Environment,
   type GroundPreset,
   type SkyPreset,
@@ -85,37 +84,11 @@ function ColorRow({
 }
 
 /**
- * Sky, ground and fog for the 3D workspace. Changes apply instantly and are remembered in
+ * Sky, ground and fog for the 3D workspace, from real CC0 photos. Changes apply instantly and are remembered in
  * this browser; nothing here touches the real place in Studio.
  */
 export default function EnvironmentPanel({ env, onChange }: { env: Environment; onChange: (e: Environment) => void }) {
   const [tab, setTab] = useState<Tab>("sky");
-  const skyThumbs = useMemo(
-    () =>
-      Object.fromEntries(
-        (Object.keys(SKY_PRESETS) as SkyPreset[]).map((k) => {
-          // Thumbnail = the band just above the horizon, where the clouds and peaks are.
-          const full = drawSky(k, 512, 256);
-          const c = document.createElement("canvas");
-          c.width = 160;
-          c.height = 90;
-          c.getContext("2d")!.drawImage(full, 0, 40, 290, 92, 0, 0, 160, 90);
-          return [k, c.toDataURL("image/jpeg", 0.8)];
-        }),
-      ) as Record<SkyPreset, string>,
-    [],
-  );
-  const groundThumbs = useMemo(
-    () =>
-      Object.fromEntries(
-        (Object.keys(GROUND_PRESETS) as GroundPreset[]).map((k) => [
-          k,
-          k === "roblox" ? "/roblox/baseplate.png" : drawGround(k, null, 96).toDataURL("image/jpeg", 0.85),
-        ]),
-      ) as Record<GroundPreset, string>,
-    [],
-  );
-
   const set = (patch: Partial<Environment>) => onChange({ ...env, ...patch });
   const isDefault = JSON.stringify(env) === JSON.stringify(DEFAULT_ENVIRONMENT);
 
@@ -150,8 +123,11 @@ export default function EnvironmentPanel({ env, onChange }: { env: Environment; 
                   env.sky === k ? "border-blox ring-2 ring-blox/40" : "border-white/10 hover:border-white/25"
                 }`}
               >
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={skyThumbs[k]} alt="" className="aspect-video w-full object-cover" />
+                {SKY_PRESETS[k].thumb ? (
+                  <img src={SKY_PRESETS[k].thumb} alt="" loading="lazy" className="aspect-video w-full object-cover" />
+                ) : (
+                  <span className="block aspect-video w-full bg-[linear-gradient(#9ac8db,#bbd2db_45%,#d6dbdb_70%,#6b778d_70%)]" />
+                )}
                 <span className="block bg-black/30 px-2 py-1.5 text-[11px] text-white/80">{SKY_PRESETS[k].label}</span>
               </button>
             ))}
@@ -171,21 +147,25 @@ export default function EnvironmentPanel({ env, onChange }: { env: Environment; 
                     env.ground === k ? "border-blox ring-2 ring-blox/40" : "border-white/10 hover:border-white/25"
                   }`}
                 >
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img
-                    src={groundThumbs[k]}
-                    alt=""
-                    className="aspect-square w-full object-cover"
-                    style={k === "roblox" ? { background: GROUND_PRESETS.roblox.color } : undefined}
-                  />
+                  {GROUND_PRESETS[k].thumb ? (
+                    <img
+                      src={GROUND_PRESETS[k].thumb}
+                      alt=""
+                      loading="lazy"
+                      className="aspect-square w-full object-cover"
+                      style={k === "roblox" ? { background: GROUND_PRESETS.roblox.color } : undefined}
+                    />
+                  ) : (
+                    <span className="block aspect-square w-full" style={{ background: env.groundColor && env.ground === k ? env.groundColor : GROUND_PRESETS[k].color }} />
+                  )}
                   <span className="block truncate bg-black/30 px-1.5 py-1 text-[10.5px] text-white/80">{GROUND_PRESETS[k].label}</span>
                 </button>
               ))}
             </div>
             <ColorRow
-              label="Ground color"
+              label={GROUND_PRESETS[env.ground].image ? "Tint" : "Ground color"}
               value={env.groundColor}
-              fallback={GROUND_PRESETS[env.ground].color}
+              fallback={GROUND_PRESETS[env.ground].image ? "#ffffff" : GROUND_PRESETS[env.ground].color}
               onChange={(v) => set({ groundColor: v })}
             />
             <Slider label="Tile size" value={env.tile} min={2} max={64} suffix=" studs" onChange={(v) => set({ tile: v })} />
@@ -220,7 +200,13 @@ export default function EnvironmentPanel({ env, onChange }: { env: Environment; 
       </div>
 
       <div className="flex items-center justify-between border-t border-white/[0.08] px-4 py-2.5">
-        <span className="text-[10.5px] text-white/35">Only changes how Bloxy shows your place.</span>
+        <span className="text-[10.5px] text-white/35">
+          Only changes how Bloxy shows your place. Photos:{" "}
+          <a href="https://polyhaven.com" target="_blank" rel="noreferrer" className="underline hover:text-white/60">
+            Poly Haven
+          </a>{" "}
+          (CC0)
+        </span>
         <button
           type="button"
           disabled={isDefault}
