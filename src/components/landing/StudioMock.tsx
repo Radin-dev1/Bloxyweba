@@ -29,7 +29,7 @@ const CLS_COLOR: Record<string, string> = {
   part: "bg-sky-400/70",
   model: "bg-violet-400/80",
   folder: "bg-amber-300/70",
-  script: "bg-emerald-400/80",
+  script: "bg-blox-soft/80",
 };
 
 // Stage blocks in the viewport: [left%, bottom%, width%, hue].
@@ -40,7 +40,7 @@ const BLOCKS: [number, number, number, string][] = [
   [51, 30, 10, "#5c9bff"],
   [63, 40, 9, "#7fb0ff"],
   [75, 48, 9, "#7fb0ff"],
-  [86, 56, 8, "#34e0a1"],
+  [86, 56, 8, "#2f7dff"],
 ];
 
 export default function StudioMock() {

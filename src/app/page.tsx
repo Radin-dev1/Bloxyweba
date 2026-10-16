@@ -97,7 +97,7 @@ export default function Landing() {
         {/* Atmosphere: deep blue sky glow + faint horizon, like light over a baseplate. */}
         <div className="pointer-events-none absolute inset-0 overflow-hidden">
           <div className="absolute top-[-30%] left-1/2 h-[80vh] w-[120vw] -translate-x-1/2 rounded-[100%] bg-[radial-gradient(closest-side,rgba(47,125,255,0.35),transparent)]" />
-          <div className="absolute top-[10%] left-[10%] h-72 w-72 rounded-full bg-[radial-gradient(closest-side,rgba(52,224,161,0.12),transparent)]" />
+          <div className="absolute top-[10%] left-[10%] h-72 w-72 rounded-full bg-[radial-gradient(closest-side,rgba(47,125,255,0.12),transparent)]" />
           <div className="absolute right-[5%] bottom-[15%] h-96 w-96 rounded-full bg-[radial-gradient(closest-side,rgba(127,176,255,0.12),transparent)]" />
           <div className="absolute inset-x-0 bottom-0 h-40 bg-gradient-to-t from-ink to-transparent" />
         </div>
@@ -166,7 +166,7 @@ export default function Landing() {
                       <span className="text-white/25">%LOCALAPPDATA%</span>\Roblox\Plugins\
                     </p>
                     <p className="flex items-center gap-2 text-white/85">
-                      <span className="size-2 rounded-[3px] bg-emerald-400/80" /> Bloxy.server.lua
+                      <span className="size-2 rounded-[3px] bg-blox-soft/80" /> Bloxy.server.lua
                       <span className="ml-auto rounded-full bg-signal/10 px-2 text-[10px] text-signal">28 KB</span>
                     </p>
                   </div>

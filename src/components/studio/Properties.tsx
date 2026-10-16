@@ -44,7 +44,7 @@ function Vec3({
         <label key={axis} className="relative">
           <span
             className={`pointer-events-none absolute top-1/2 left-1.5 -translate-y-1/2 text-[9px] font-semibold ${
-              ["text-red-400", "text-emerald-400", "text-sky-400"][i]
+              ["text-red-400", "text-blox", "text-blox-soft"][i]
             }`}
           >
             {axis}

@@ -2,13 +2,12 @@ import { GoogleGenAI, type Content, type Part } from "@google/genai";
 import { SYSTEM_PROMPT, TOOL_SPECS } from "@/lib/tools";
 import { MAX_STEPS, type AgentParams } from "./types";
 
-const functionDeclarations = TOOL_SPECS.map((t) => ({
-  name: t.name,
-  description: t.description,
-  parametersJsonSchema: t.parameters,
-}));
-
-export async function runGemini({ model, apiKey, history, executeTool, emit, signal }: AgentParams) {
+export async function runGemini({ model, apiKey, history, executeTool, emit, signal, ...run }: AgentParams) {
+  const functionDeclarations = (run.tools ?? TOOL_SPECS).map((t) => ({
+    name: t.name,
+    description: t.description,
+    parametersJsonSchema: t.parameters,
+  }));
   const ai = new GoogleGenAI({ apiKey });
   const contents: Content[] = history.map((m) => ({
     role: m.role === "assistant" ? "model" : "user",
@@ -16,11 +15,12 @@ export async function runGemini({ model, apiKey, history, executeTool, emit, sig
   }));
 
   for (let step = 0; step < MAX_STEPS; step++) {
+    if (signal.aborted) return;
     const stream = await ai.models.generateContentStream({
       model,
       contents,
       config: {
-        systemInstruction: SYSTEM_PROMPT,
+        systemInstruction: run.system ?? SYSTEM_PROMPT,
         tools: [{ functionDeclarations }],
         abortSignal: signal,
       },
@@ -45,7 +45,7 @@ export async function runGemini({ model, apiKey, history, executeTool, emit, sig
         const id = call.id ?? `gemini-${step}-${i}`;
         const name = call.name ?? "";
         emit({ type: "tool_call", id, name, args: call.args ?? {} });
-        const r = await executeTool(id, name, call.args ?? {});
+        const r = await executeTool(id, name, call.args ?? {}, signal);
         return {
           functionResponse: {
             id: call.id,

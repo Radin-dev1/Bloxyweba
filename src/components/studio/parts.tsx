@@ -11,6 +11,8 @@ import {
   ChevronDown,
   Download,
 } from "../landing/icons";
+import FreeToggle from "./FreeToggle";
+import { withFreeOnly } from "./freeModels";
 import ModelBrowser from "./ModelBrowser";
 import ProviderLogo from "./ProviderLogo";
 
@@ -424,6 +426,13 @@ export function SettingsDialog({
             </span>
           </button>
 
+          <div className="mt-3 rounded-xl border border-white/[0.07] px-2 py-2">
+            <FreeToggle on={draft.freeOnly} onChange={(on) => setDraft(withFreeOnly(draft, on))} />
+            <p className="mt-1 px-1 text-xs leading-relaxed text-white/40">
+              Only OpenRouter&apos;s free models. They cost no bits, but they&apos;re slower and rate-limited.
+            </p>
+          </div>
+
           <p className="mt-4 rounded-xl border border-blox/20 bg-blox/[0.07] px-3.5 py-3 text-xs leading-relaxed text-white/60">
             <span className="font-medium text-white/85">
               Bloxy runs on bits.
@@ -595,6 +604,8 @@ export function SettingsDialog({
         <div onClick={(e) => e.stopPropagation()}>
           <ModelBrowser
             value={draft.models.openrouter}
+            freeOnly={draft.freeOnly}
+            onFreeOnly={(on) => setDraft(withFreeOnly(draft, on))}
             onPick={(id) =>
               setDraft({
                 ...draft,

@@ -6,6 +6,9 @@ import {
   randomPairCode,
   token,
   type Bridge,
+  type ChatJob,
+  type ChatJobResult,
+  type ChatJobStatus,
   type CommandResult,
   type StudioCommand,
   type StudioInfo,
@@ -32,6 +35,7 @@ type Session = {
   pending: Map<string, Pending>;
   waiters: Set<() => void>;
   createdAt: number;
+  jobs?: Map<string, ChatJob>;
 };
 
 type Store = {
@@ -79,6 +83,7 @@ function sweep() {
 }
 
 const isConnected = (s: Session) => !!s.pluginToken && Date.now() - s.pluginLastSeen < PLUGIN_STALE_MS;
+const sessionJobs = (session: Session): Map<string, ChatJob> => (session.jobs ??= new Map());
 
 function sessionForPlugin(pluginToken: string | null) {
   if (!pluginToken) return null;
@@ -103,6 +108,7 @@ export const memoryBridge: Bridge = {
       pending: new Map(),
       waiters: new Set(),
       createdAt: Date.now(),
+      jobs: new Map(),
     };
     store.sessions.set(s.id, s);
     store.byPairCode.set(s.pairCode, s.id);
@@ -190,22 +196,75 @@ export const memoryBridge: Bridge = {
     return true;
   },
 
-  async runInStudio(sessionId, tool, args, timeoutMs = 60_000) {
+  async runInStudio(sessionId, tool, args, timeoutMs = 60_000, signal) {
     const s = store.sessions.get(sessionId);
     if (!s) return { ok: false, error: "Unknown session. Reload the page." };
     if (!isConnected(s)) return { ok: false, error: NOT_CONNECTED };
 
     const cmd: StudioCommand = { id: token(9), tool, args };
+    if (signal?.aborted) return { ok: false, error: "Stopped." };
+
     return new Promise<CommandResult>((resolve) => {
-      const timer = setTimeout(() => {
+      const finish = (result: CommandResult) => {
+        clearTimeout(timer);
+        signal?.removeEventListener("abort", abort);
         s.pending.delete(cmd.id);
         const i = s.queue.indexOf(cmd);
         if (i !== -1) s.queue.splice(i, 1);
-        resolve({ ok: false, error: `Studio did not answer within ${timeoutMs / 1000}s` });
+        resolve(result);
+      };
+      const abort = () => finish({ ok: false, error: "Stopped." });
+      const timer = setTimeout(() => {
+        finish({ ok: false, error: `Studio did not answer within ${timeoutMs / 1000}s` });
       }, timeoutMs);
-      s.pending.set(cmd.id, { resolve, timer });
+      s.pending.set(cmd.id, { resolve: finish, timer });
+      signal?.addEventListener("abort", abort, { once: true });
       s.queue.push(cmd);
       for (const wake of [...s.waiters]) wake();
     });
+  },
+
+  async createChatJob(sessionId, jobId) {
+    const s = store.sessions.get(sessionId);
+    if (!s) return false;
+    const jobs = sessionJobs(s);
+    if (jobs.has(jobId)) return false;
+    jobs.set(jobId, { id: jobId, status: "running", events: [], updatedAt: Date.now() });
+    return true;
+  },
+
+  async appendChatJobEvent(sessionId, jobId, event) {
+    const s = store.sessions.get(sessionId);
+    const job = s ? sessionJobs(s).get(jobId) : undefined;
+    if (!job || job.status === "stopped" || job.status === "completed" || job.status === "error") return false;
+    job.events.push({ seq: job.events.length, event });
+    job.updatedAt = Date.now();
+    return true;
+  },
+
+  async getChatJob(sessionId, jobId, afterSeq = -1): Promise<ChatJobResult | null> {
+    const s = store.sessions.get(sessionId);
+    const job = s ? sessionJobs(s).get(jobId) : undefined;
+    if (!job) return null;
+    const events = job.events.filter((entry) => entry.seq > afterSeq);
+    return { jobId, status: job.status, events, nextSeq: events.at(-1)?.seq ?? afterSeq };
+  },
+
+  async finishChatJob(sessionId, jobId, status: Exclude<ChatJobStatus, "queued" | "running">) {
+    const s = store.sessions.get(sessionId);
+    const job = s ? sessionJobs(s).get(jobId) : undefined;
+    if (!job || job.status === "stopped") return false;
+    job.status = status;
+    job.updatedAt = Date.now();
+    return true;
+  },
+
+  async stopChatJob(sessionId, jobId) {
+    const s = store.sessions.get(sessionId);
+    const job = s ? sessionJobs(s).get(jobId) : undefined;
+    if (!job || job.status === "completed" || job.status === "error" || job.status === "stopped") return false;
+    job.status = "stopped";
+    job.updatedAt = Date.now();
+    return true;
   },
 };

@@ -3,7 +3,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Search } from "../landing/icons";
-import { RECOMMENDED, formatContext, formatPrice, loadTextModels, shortName, type ModelInfo } from "./models";
+import { FREE_RECOMMENDED, RECOMMENDED as ALL_RECOMMENDED, formatContext, formatPrice, isFreeChatModel, loadTextModels, shortName, type ModelInfo } from "./models";
+import FreeToggle from "./FreeToggle";
 import ProviderLogo, { vendorName, vendorOf } from "./ProviderLogo";
 
 type Feature = "all" | "reasoning" | "vision" | "tools" | "free";
@@ -34,10 +35,14 @@ function Tags({ m }: { m: ModelInfo }) {
  */
 export default function ModelBrowser({
   value,
+  freeOnly = false,
+  onFreeOnly,
   onPick,
   onClose,
 }: {
   value: string;
+  freeOnly?: boolean;
+  onFreeOnly?: (on: boolean) => void;
   onPick: (id: string) => void;
   onClose: () => void;
 }) {
@@ -59,7 +64,8 @@ export default function ModelBrowser({
     };
   }, [onClose]);
 
-  const all = useMemo(() => models ?? [], [models]);
+  const all = useMemo(() => (models ?? []).filter((m) => !freeOnly || isFreeChatModel(m)), [models, freeOnly]);
+  const RECOMMENDED = freeOnly ? FREE_RECOMMENDED : ALL_RECOMMENDED;
   const byId = useMemo(() => new Map(all.map((m) => [m.id, m])), [all]);
   const info = (id: string): ModelInfo => byId.get(id) ?? { id, name: id };
 
@@ -95,7 +101,7 @@ export default function ModelBrowser({
       count: list.length,
       groups: [...map.entries()].sort((a, b) => rank(a[0]) - rank(b[0]) || b[1].length - a[1].length),
     };
-  }, [all, query, vendor, feature]);
+  }, [all, query, vendor, feature, RECOMMENDED]);
 
   const typed = query.trim();
   const custom = typed.includes("/") && !byId.has(typed) ? typed : null;
@@ -120,6 +126,11 @@ export default function ModelBrowser({
       >
         <div className="flex items-center justify-between border-b border-white/[0.07] px-5 py-3.5">
           <h2 className="font-display text-base font-bold tracking-tight text-white">Select Model</h2>
+          {onFreeOnly && (
+            <span className="mr-auto ml-4">
+              <FreeToggle on={freeOnly} onChange={onFreeOnly} />
+            </span>
+          )}
           <button type="button" aria-label="Close" onClick={onClose} className="grid size-8 place-items-center rounded-lg text-white/50 hover:bg-white/10 hover:text-white">
             ×
           </button>
@@ -130,7 +141,7 @@ export default function ModelBrowser({
             {/* Recommended */}
             <div className="rounded-2xl border border-white/[0.07] bg-white/[0.02] p-3">
               <div className="flex items-center justify-between">
-                <p className="text-xs font-semibold text-white/80">Recommended for Bloxy</p>
+                <p className="text-xs font-semibold text-white/80">{freeOnly ? "Best free models" : "Recommended for Bloxy"}</p>
                 <div className="flex gap-1">
                   {[-1, 1].map((d) => (
                     <button

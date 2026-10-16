@@ -7,6 +7,8 @@ import {
   randomPairCode,
   token,
   type Bridge,
+  type ChatJobResult,
+  type ChatJobStatus,
   type CommandResult,
   type StudioCommand,
   type StudioInfo,
@@ -193,7 +195,7 @@ export function createRedisBridge(redis: Redis): Bridge {
       return true;
     },
 
-    async runInStudio(sessionId, tool, args, timeoutMs = 60_000) {
+    async runInStudio(sessionId, tool, args, timeoutMs = 60_000, signal) {
       const h = await session(sessionId);
       if (!h) return { ok: false, error: "Unknown session. Reload the page." };
       if (!connected(h)) return { ok: false, error: NOT_CONNECTED };
@@ -211,12 +213,72 @@ export function createRedisBridge(redis: Redis): Bridge {
       const deadline = Date.now() + timeoutMs;
       await sleep(150);
       while (Date.now() < deadline) {
+        if (signal?.aborted) {
+          await redis.pipeline().lrem(qKey, 0, json).del(`${P}pend:${cmd.id}`).exec();
+          return { ok: false, error: "Stopped." };
+        }
         const res = await redis.getdel<string>(`${P}res:${cmd.id}`);
         if (res) return JSON.parse(res) as CommandResult;
         await sleep(RESULT_STEP_MS);
       }
       await redis.pipeline().lrem(qKey, 0, json).del(`${P}pend:${cmd.id}`).exec();
-      return { ok: false, error: `Studio did not answer within ${timeoutMs / 1000}s` };
+      return { ok: false, error: signal?.aborted ? "Stopped." : `Studio did not answer within ${timeoutMs / 1000}s` };
+    },
+
+    async createChatJob(sessionId, jobId) {
+      if (!(await session(sessionId))) return false;
+      const jobKey = `${P}chat:${jobId}`;
+      const ok = await redis.set(jobKey, "running", { nx: true, ex: SESSION_TTL_S });
+      if (!ok) return false;
+      await redis.set(`${P}chat-owner:${jobId}`, sessionId, { ex: SESSION_TTL_S });
+      await redis.set(`${P}chat-seq:${jobId}`, "0", { ex: SESSION_TTL_S });
+      return true;
+    },
+
+    async appendChatJobEvent(sessionId, jobId, event) {
+      const owner = await redis.get<string>(`${P}chat-owner:${jobId}`);
+      if (owner !== sessionId) return false;
+      const jobKey = `${P}chat:${jobId}`;
+      const status = await redis.get<string>(jobKey);
+      if (!status || status === "stopped" || status === "completed" || status === "error") return false;
+      const seq = await redis.incr(`${P}chat-seq:${jobId}`) - 1;
+      const eventsKey = `${P}chat-events:${jobId}`;
+      await redis.pipeline()
+        .rpush(eventsKey, JSON.stringify({ seq, event }))
+        .ltrim(eventsKey, -2000, -1)
+        .expire(eventsKey, SESSION_TTL_S)
+        .exec();
+      return true;
+    },
+
+    async getChatJob(sessionId, jobId, afterSeq = -1): Promise<ChatJobResult | null> {
+      const owner = await redis.get<string>(`${P}chat-owner:${jobId}`);
+      if (owner !== sessionId) return null;
+      const jobKey = `${P}chat:${jobId}`;
+      const status = await redis.get<string>(jobKey);
+      if (!status) return null;
+      const raw = await redis.lrange<string>(`${P}chat-events:${jobId}`, 0, -1);
+      const events = raw
+        .map((line) => JSON.parse(line) as { seq: number; event: unknown })
+        .filter((entry) => entry.seq > afterSeq);
+      return { jobId, status: status as ChatJobStatus, events, nextSeq: events.at(-1)?.seq ?? afterSeq };
+    },
+
+    async finishChatJob(sessionId, jobId, status: Exclude<ChatJobStatus, "queued" | "running">) {
+      const owner = await redis.get<string>(`${P}chat-owner:${jobId}`);
+      if (owner !== sessionId) return false;
+      const current = await redis.get<string>(`${P}chat:${jobId}`);
+      if (!current || current === "stopped") return false;
+      return (await redis.set(`${P}chat:${jobId}`, status, { ex: SESSION_TTL_S })) === "OK";
+    },
+
+    async stopChatJob(sessionId, jobId) {
+      const owner = await redis.get<string>(`${P}chat-owner:${jobId}`);
+      if (owner !== sessionId) return false;
+      const jobKey = `${P}chat:${jobId}`;
+      const status = await redis.get<string>(jobKey);
+      if (!status || status === "stopped" || status === "completed" || status === "error") return false;
+      return (await redis.set(jobKey, "stopped", { ex: SESSION_TTL_S })) === "OK";
     },
   };
 }

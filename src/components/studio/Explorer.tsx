@@ -9,7 +9,7 @@ import { ChevronDown, Search } from "../landing/icons";
 const SHAPE_CHIP: Record<string, string> = {
   Block: "bg-sky-400",
   Ball: "bg-amber-300",
-  Cylinder: "bg-emerald-400",
+  Cylinder: "bg-blox-soft",
   Wedge: "bg-orange-400",
   CornerWedge: "bg-orange-400",
   Mesh: "bg-fuchsia-400",

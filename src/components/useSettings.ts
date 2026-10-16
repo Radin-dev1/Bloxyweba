@@ -10,6 +10,8 @@ export type Settings = {
   apiKeys: Record<ProviderId, string>;
   /** The user's own OpenRouter key: used free for Bloxy chat and the Nodes tab instead of bits. */
   openrouterKey: string;
+  /** Only show and use OpenRouter's free models. */
+  freeOnly: boolean;
 };
 
 const KEY = "bloxy.settings";
@@ -24,6 +26,7 @@ const DEFAULTS: Settings = {
   },
   apiKeys: { openrouter: "", claude: "", gemini: "" },
   openrouterKey: "",
+  freeOnly: false,
 };
 
 function load(): Settings {
@@ -36,6 +39,7 @@ function load(): Settings {
       models: { ...DEFAULTS.models, ...saved.models },
       apiKeys: { ...DEFAULTS.apiKeys, ...saved.apiKeys },
       openrouterKey: typeof saved.openrouterKey === "string" ? saved.openrouterKey : "",
+      freeOnly: saved.freeOnly === true,
     };
   } catch {
     return DEFAULTS;

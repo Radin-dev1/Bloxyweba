@@ -23,3 +23,24 @@ export function demoScene(): Scene {
     fetchedAt: 0,
   };
 }
+
+// The local workspace (everything built while Studio isn't connected) is kept in this browser,
+// so a reload or leaving the page doesn't wipe it.
+const LOCAL_PLACE_KEY = "bloxy.localPlace.v1";
+
+export function loadLocalPlace(): Scene {
+  const base = demoScene();
+  try {
+    const raw = localStorage.getItem(LOCAL_PLACE_KEY);
+    const parts = raw ? (JSON.parse(raw) as Scene["parts"]) : null;
+    if (Array.isArray(parts) && parts.length > 0) return { ...base, parts };
+  } catch {}
+  return base;
+}
+
+export function saveLocalPlace(scene: Scene) {
+  try {
+    if (scene.parts.length <= 1) localStorage.removeItem(LOCAL_PLACE_KEY);
+    else localStorage.setItem(LOCAL_PLACE_KEY, JSON.stringify(scene.parts.slice(0, 5000)));
+  } catch {}
+}

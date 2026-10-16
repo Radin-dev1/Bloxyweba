@@ -5,7 +5,8 @@ import { z } from "zod";
  * browser with each request (or OPENROUTER_API_KEY on the server) and is never stored.
  */
 
-export const OPENROUTER = "https://openrouter.ai/api/v1";
+// OPENROUTER_BASE_URL lets the smoke tests point Bloxy at a local fake OpenRouter.
+export const OPENROUTER = (typeof process !== "undefined" && process.env.OPENROUTER_BASE_URL) || "https://openrouter.ai/api/v1";
 
 export const GEN_DEFAULTS = {
   model3d: "google/gemini-3.8-flash",

@@ -10,15 +10,15 @@ type Msg =
   | { role: "assistant"; content: string | null; tool_calls?: ToolCall[] }
   | { role: "tool"; tool_call_id: string; content: string };
 
-const tools = TOOL_SPECS.map((t) => ({
-  type: "function" as const,
-  function: { name: t.name, description: t.description, parameters: t.parameters },
-}));
-
-export async function runOpenRouter({ model, apiKey, history, executeTool, emit, signal, billing }: AgentParams) {
-  const messages: Msg[] = [{ role: "system", content: SYSTEM_PROMPT }, ...history.map((m) => ({ ...m }))];
+export async function runOpenRouter({ model, apiKey, history, executeTool, emit, signal, billing, ...run }: AgentParams) {
+  const tools = (run.tools ?? TOOL_SPECS).map((t) => ({
+    type: "function" as const,
+    function: { name: t.name, description: t.description, parameters: t.parameters },
+  }));
+  const messages: Msg[] = [{ role: "system", content: run.system ?? SYSTEM_PROMPT }, ...history.map((m) => ({ ...m }))];
 
   for (let step = 0; step < MAX_STEPS; step++) {
+    if (signal.aborted) return;
     if (billing && !(await billing.beforeStep())) {
       emit({ type: "error", message: "You're out of bits for today. They refill daily, or add your own OpenRouter key in Settings." });
       return;
@@ -65,7 +65,7 @@ export async function runOpenRouter({ model, apiKey, history, executeTool, emit,
           return { id: call.id, content: "Your tool arguments weren't valid JSON. Try again." };
         }
         emit({ type: "tool_call", id: call.id, name: call.function.name, args });
-        const r = await executeTool(call.id, call.function.name, args);
+        const r = await executeTool(call.id, call.function.name, args, signal);
         return { id: call.id, content: r.ok ? r.content : `Error: ${r.content}` };
       }),
     );

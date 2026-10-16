@@ -58,6 +58,23 @@ class FakeRedis {
     this.lists.set(k, l);
     return l.length;
   }
+  async incr(k: string) {
+    const n = Number(this.kv.get(k) ?? 0) + 1;
+    this.kv.set(k, String(n));
+    return n;
+  }
+  async lrange(k: string, start: number, stop: number) {
+    const list = this.lists.get(k) ?? [];
+    const end = stop < 0 ? list.length + stop : stop;
+    return list.slice(start, end + 1);
+  }
+  async ltrim(k: string, start: number, stop: number) {
+    const list = this.lists.get(k) ?? [];
+    const normalizedStart = start < 0 ? Math.max(0, list.length + start) : start;
+    const normalizedEnd = stop < 0 ? list.length + stop : stop;
+    this.lists.set(k, list.slice(normalizedStart, normalizedEnd + 1));
+    return "OK";
+  }
   async lrem(k: string, _n: number, v: string) {
     const l = this.lists.get(k) ?? [];
     const kept = l.filter((x) => x !== v);
@@ -69,7 +86,7 @@ class FakeRedis {
     const chain: Record<string, unknown> = {
       exec: () => Promise.all(ops.map((op) => op())),
     };
-    for (const m of ["hset", "expire", "set", "del", "rpush", "lrem"] as const) {
+    for (const m of ["hset", "expire", "set", "del", "rpush", "lrem", "ltrim"] as const) {
       chain[m] = (...args: unknown[]) => {
         ops.push(() => (this[m] as (...a: unknown[]) => Promise<unknown>)(...args));
         return chain;
@@ -116,6 +133,16 @@ async function scenario(bridge: Bridge) {
       }
     }
   })();
+
+  const jobId = "chat-smoke-job";
+  assert.equal(await bridge.createChatJob(sessionId, jobId), true);
+  assert.equal(await bridge.appendChatJobEvent(sessionId, jobId, { type: "user", content: "Keep running after tab close" }), true);
+  const events = await bridge.getChatJob(sessionId, jobId, -1);
+  assert.equal(events?.status, "running");
+  assert.equal((events?.events[0]?.event as { type: string }).type, "user");
+  assert.equal(await bridge.stopChatJob(sessionId, jobId), true);
+  assert.equal(await bridge.appendChatJobEvent(sessionId, jobId, { type: "text", delta: "ignored after stop" }), false);
+  assert.equal((await bridge.getChatJob(sessionId, jobId))?.status, "stopped");
 
   const ok = await execute("list_children", { path: "Workspace", depth: 2 });
   assert.deepEqual(ok, { ok: true, result: { echoed: "list_children", args: { path: "Workspace", depth: 2 } } });

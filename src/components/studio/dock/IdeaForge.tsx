@@ -19,6 +19,7 @@ type Idea = { id: string; prompt: string; image: string; build?: BuildT; inserte
 
 export default function IdeaForge({
   openrouterKey,
+  model3d,
   connected,
   onInsertBuild,
   onSpent,
@@ -26,6 +27,8 @@ export default function IdeaForge({
   onClose,
 }: {
   openrouterKey: string;
+  /** Model for "Make 3D" (free-only mode passes a free one); default is the server's. */
+  model3d?: string;
   connected: boolean;
   onInsertBuild: (build: BuildT) => Promise<string>;
   onSpent: () => void;
@@ -101,6 +104,7 @@ export default function IdeaForge({
         prompt: current.prompt === "Uploaded reference" ? "the object in the image" : current.prompt,
         image: current.image,
         codeFormat: "roblox",
+        ...(model3d ? { model: model3d } : {}),
       });
       update({ ...current, build: r.build, inserted: undefined });
       setView("3d");

@@ -45,6 +45,10 @@ A website (Next.js) with an AI agent that builds inside **Roblox Studio**. It's 
 - **3D generation uses the 3DCode dataset** (huggingface.co/datasets/YipengGao/3DCode, 243 object categories): `scripts/build-3dcode-index.py` builds `data/3dcode/index.json` (construction descriptions + one trimmed Blender geometry script per category, Infinigen BSD-3 notice in `data/3dcode/NOTICE.md`). `src/lib/threeDCode.ts` does BM25 retrieval; `/api/gen/model3d` adds the closest references to the prompt in both modes (scripts only in Blender mode) and returns `references`.
 - **Environment** uses real CC0 Poly Haven photos (`public/env/`), with normal maps, an anti-tiling shader in `Viewport3D.tsx` (`breakUpTiling`) and sky-based lighting. AI lab logos are LobeHub SVGs in `public/logos/`.
 
+- **Chat runs as a background job** (`/api/chat` POST starts it with `after()`, GET polls events, DELETE stops; events live in the bridge). The conversation is saved in the browser (`bloxy.chat.v1`) and a running reply resumes after a reload. **Without Studio** the chat still works: `src/lib/agent/offline.ts` gives the model a `build_model` tool that places models in the local workspace (saved in `bloxy.localPlace.v1`).
+- **Free models only** (Settings, the model chip and the model browser): `settings.freeOnly`, `models.ts` (`FREE_RECOMMENDED`, `isFreeChatModel`), `freeModels.ts`. Idea Forge's Make 3D also uses a free model in this mode.
+- **Testing without a real key:** set `OPENROUTER_BASE_URL` (in `.env.local`) to a fake OpenRouter server.
+
 ## Open items / next steps
 
 0. **Turn on bits in production:** set `OPENROUTER_API_KEY`, `ROBLOX_CLIENT_ID`, `ROBLOX_CLIENT_SECRET`, `AUTH_SECRET` and `ADMIN_ROBLOX_IDS` in Vercel, register the callback URL in the Roblox OAuth app, then redeploy. Untested against real Roblox and OpenRouter so far; tested with a fake key and a forged test session.

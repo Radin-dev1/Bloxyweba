@@ -36,6 +36,11 @@ const misconfigured: Bridge = {
   pollCommands: fail,
   submitResult: fail,
   runInStudio: async (): Promise<CommandResult> => ({ ok: false, error: SETUP }),
+  createChatJob: fail,
+  appendChatJobEvent: fail,
+  getChatJob: fail,
+  finishChatJob: fail,
+  stopChatJob: fail,
 };
 
 export const bridge: Bridge = pickBridge();

@@ -60,7 +60,7 @@ export const KIND_STYLE: Record<NodeKind, { label: string; color: string }> = {
   upload: { label: "Upload", color: "#f0a35c" },
   image: { label: "Image", color: "#f472b6" },
   video: { label: "Video", color: "#a78bfa" },
-  model3d: { label: "3D Model", color: "#34e0a1" },
+  model3d: { label: "3D Model", color: "#2f7dff" },
   studio: { label: "Studio step", color: "#2f7dff" },
   check: { label: "Check", color: "#7fb0ff" },
 };

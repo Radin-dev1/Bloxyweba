@@ -26,6 +26,16 @@ export type SessionStatus = {
 
 export type StudioInfo = Record<string, unknown> | null;
 
+export type ChatJobStatus = "queued" | "running" | "completed" | "stopped" | "error";
+export type ChatJob = {
+  id: string;
+  status: ChatJobStatus;
+  events: { seq: number; event: unknown }[];
+  updatedAt: number;
+};
+
+export type ChatJobResult = { jobId: string; status: ChatJobStatus; events: { seq: number; event: unknown }[]; nextSeq: number };
+
 export interface Bridge {
   readonly kind: "memory" | "redis";
   /** How long one plugin poll may wait for commands before returning empty. */
@@ -37,7 +47,12 @@ export interface Bridge {
   disconnectPlugin(pluginToken: string | null): Promise<boolean>;
   pollCommands(pluginToken: string | null, studioInfo?: StudioInfo): Promise<StudioCommand[] | null>;
   submitResult(pluginToken: string | null, id: string, result: CommandResult): Promise<boolean>;
-  runInStudio(sessionId: string, tool: string, args: unknown, timeoutMs?: number): Promise<CommandResult>;
+  runInStudio(sessionId: string, tool: string, args: unknown, timeoutMs?: number, signal?: AbortSignal): Promise<CommandResult>;
+  createChatJob(sessionId: string, jobId: string): Promise<boolean>;
+  appendChatJobEvent(sessionId: string, jobId: string, event: unknown): Promise<boolean>;
+  getChatJob(sessionId: string, jobId: string, afterSeq?: number): Promise<ChatJobResult | null>;
+  finishChatJob(sessionId: string, jobId: string, status: Exclude<ChatJobStatus, "queued" | "running">): Promise<boolean>;
+  stopChatJob(sessionId: string, jobId: string): Promise<boolean>;
 }
 
 export const PAIR_CODE_TTL_MS = 10 * 60 * 1000;

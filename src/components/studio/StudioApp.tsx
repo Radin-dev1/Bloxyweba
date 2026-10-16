@@ -7,7 +7,7 @@ import { PROVIDERS } from "@/lib/agent/providers";
 import { useStudioSession } from "../useStudioSession";
 import { useSettings } from "../useSettings";
 import { ArrowUp, BloxyMark, BloxyWordmark, ChevronDown, Settings as Gear, Sparkle, Stop } from "../landing/icons";
-import { demoScene } from "./demoScene";
+import { demoScene, loadLocalPlace, saveLocalPlace } from "./demoScene";
 import Explorer from "./Explorer";
 import { ConnectionPill, MessageView, PairPanel, SettingsDialog } from "./parts";
 import Properties from "./Properties";
@@ -17,6 +17,7 @@ import { applyEdit, toStudioProperties, type PartEdit } from "./sceneMath";
 import { useChat } from "./useChat";
 import AccountPill from "./AccountPill";
 import ModelPicker from "./ModelPicker";
+import { FREE_DEFAULT, withFreeOnly } from "./freeModels";
 import { useAccount } from "./useAccount";
 import { useScene, type Scene } from "./useScene";
 import { DEFAULT_VIEWPORT_OPTIONS, type Tool, type ViewportOptions } from "./Viewport3D";
@@ -118,10 +119,18 @@ export default function StudioApp() {
     },
     [refreshScene, refreshAccount],
   );
-  const chat = useChat({ sessionId, settings, onTurnEnd, onNeedsKey: () => setShowSettings(true) });
+  const chat = useChat({
+    sessionId,
+    settings,
+    onTurnEnd,
+    onNeedsKey: () => setShowSettings(true),
+    // Offline, the agent builds into the local workspace (insertBuild is declared below; this runs later).
+    onBuild: (build) => void insertBuild(build).catch(() => {}),
+  });
 
   // Before Studio connects, a demo place you can click around and edit locally.
-  const [demo, setDemo] = useState<Scene>(() => demoScene());
+  const [demo, setDemo] = useState<Scene>(loadLocalPlace);
+  useEffect(() => saveLocalPlace(demo), [demo]);
   const scene = connected ? sceneApi.scene : demo;
   const parts = useMemo(() => scene?.parts ?? [], [scene]);
 
@@ -385,6 +394,7 @@ export default function StudioApp() {
               {workspacePanel === "connect" && (connected ? <div className="flex-1 overflow-y-auto p-4"><PlaceCard placeName={status?.studioInfo?.placeName ?? "Your place"} count={sceneApi.scene?.parts.length ?? 0} truncated={!!sceneApi.scene?.truncated} loading={sceneApi.loading} error={sceneApi.error} outdated={outdated} onNewCode={newPairCode} /></div> : <div className="flex-1 overflow-y-auto p-3"><PairPanel status={status} onNewCode={newPairCode} error={sessionError} /></div>)}
               {workspacePanel === "view" && <div className="min-h-0 flex-1 overflow-y-auto p-3"><p className="px-2 pb-2 text-[10px] font-semibold tracking-[0.16em] text-white/35 uppercase">Viewport</p><div className="space-y-1"><OptionToggle label="Baseplate grid" description="Show the repeating Studio tile texture" checked={viewportOptions.showGrid} onChange={(checked) => setViewportOptions((o) => ({ ...o, showGrid: checked }))} /><OptionToggle label="View cube" description="Show the orientation helper" checked={viewportOptions.showViewcube} onChange={(checked) => setViewportOptions((o) => ({ ...o, showViewcube: checked }))} /><OptionToggle label="Grid snap" description="Move by 1 stud and scale by 0.1" checked={viewportOptions.gridSnap} onChange={(checked) => setViewportOptions((o) => ({ ...o, gridSnap: checked }))} /><OptionToggle label="Angle snap" description="Rotate in 15° increments" checked={viewportOptions.angleSnap} onChange={(checked) => setViewportOptions((o) => ({ ...o, angleSnap: checked }))} /></div>
                 <div className="mt-4 border-t border-white/[0.08] pt-3"><p className="px-2 pb-2 text-[10px] font-semibold tracking-[0.16em] text-white/35 uppercase">Gizmo space</p><div className="grid grid-cols-3 gap-1 rounded-xl border border-white/[0.08] bg-black/20 p-1">{(["auto", "world", "local"] as const).map((space) => <button key={space} type="button" aria-pressed={viewportOptions.gizmoSpace === space} onClick={() => setViewportOptions((o) => ({ ...o, gizmoSpace: space }))} className={`rounded-lg px-2 py-2 text-[11px] capitalize transition-colors ${viewportOptions.gizmoSpace === space ? "bg-blox/25 text-blox-soft" : "text-white/50 hover:bg-white/[0.06] hover:text-white"}`}>{space}</button>)}</div></div>
+                {!connected && demo.parts.length > 1 && <div className="mt-4 border-t border-white/[0.08] pt-3"><p className="px-2 pb-2 text-[10px] font-semibold tracking-[0.16em] text-white/35 uppercase">Local workspace</p><button type="button" onClick={() => { setSelectedPath(null); setDemo(demoScene()); }} className="w-full rounded-lg border border-white/10 bg-white/[0.04] px-3 py-2 text-left text-xs text-white/70 transition hover:border-red-400/30 hover:bg-red-500/10 hover:text-red-200">Clear everything built here ({demo.parts.length - 1} parts)</button></div>}
                 <div className="mt-4 border-t border-white/[0.08] pt-3"><p className="px-2 text-xs font-medium text-white/80">Shadows</p><p className="px-2 mt-0.5 text-[10px] text-white/40">Rendering quality</p><div className="mt-2 grid grid-cols-4 gap-1 rounded-xl border border-white/[0.08] bg-black/20 p-1">{(["none", "low", "medium", "high"] as const).map((quality) => { const active = quality === "none" ? viewportOptions.shadows === "none" : viewportOptions.shadows !== "none" && viewportOptions.shadowQuality === quality; return <button key={quality} type="button" aria-pressed={active} onClick={() => setViewportOptions((o) => quality === "none" ? { ...o, shadows: "none" } : { ...o, shadows: "soft", shadowQuality: quality })} className={`rounded-lg px-1 py-2 text-[10px] capitalize transition-colors ${active ? "bg-blox/25 text-blox-soft" : "text-white/50 hover:bg-white/[0.06] hover:text-white"}`}>{quality}</button>; })}</div></div>
                 <button type="button" onClick={() => setViewportOptions(DEFAULT_VIEWPORT_OPTIONS)} className="mt-4 w-full rounded-xl border border-white/[0.08] px-3 py-2 text-xs text-white/55 transition hover:bg-white/[0.05] hover:text-white">Reset viewport options</button></div>}
             </aside>
@@ -405,6 +415,7 @@ export default function StudioApp() {
           {dockPanel === "forge" && (
             <IdeaForge
               openrouterKey={settings.openrouterKey}
+              model3d={settings.freeOnly ? FREE_DEFAULT : undefined}
               connected={connected}
               onInsertBuild={insertBuild}
               onSpent={() => void refreshAccount()}
@@ -467,6 +478,8 @@ export default function StudioApp() {
           onPickModel={(id) =>
             setSettings({ ...settings, provider: "openrouter", models: { ...settings.models, openrouter: id } })
           }
+          freeOnly={settings.freeOnly}
+          onFreeOnly={(on) => setSettings(withFreeOnly(settings, on))}
           onClearChat={() => {
             chat.clear();
             setInput("");
@@ -628,6 +641,8 @@ function ChatDock({
   connected,
   modelLabel,
   onPickModel,
+  freeOnly,
+  onFreeOnly,
   onClearChat,
   bits,
 }: {
@@ -637,13 +652,15 @@ function ChatDock({
   connected: boolean;
   modelLabel: string;
   onPickModel: (id: string) => void;
+  freeOnly: boolean;
+  onFreeOnly: (on: boolean) => void;
   onClearChat: () => void;
   /** Bits left when chatting on bits (null hides the counter). */
   bits: number | null;
 }) {
   const [open, setOpen] = useState(true);
   const scrollRef = useRef<HTMLDivElement>(null);
-  const { messages, busy } = chat;
+  const { messages, busy, activeJob } = chat;
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
@@ -700,7 +717,7 @@ function ChatDock({
               placeholder={
                 connected
                   ? "Make a team FPS map with spawns on both sides…"
-                  : "Connect Studio, then tell Bloxy what to build…"
+                  : "Ask Bloxy anything, or describe something to build…"
               }
               className="max-h-40 min-h-9 flex-1 resize-none bg-transparent py-1.5 text-[15px] leading-relaxed text-white outline-none placeholder:text-white/30"
             />
@@ -722,7 +739,7 @@ function ChatDock({
           )}
           <div className="mt-1.5 flex items-center justify-between gap-2 pl-1">
             <div className="flex min-w-0 items-center gap-1.5 text-[11px] text-white/40">
-              <ModelPicker value={modelLabel} onPick={onPickModel} />
+              <ModelPicker value={modelLabel} onPick={onPickModel} freeOnly={freeOnly} onFreeOnly={onFreeOnly} />
               {messages.length > 0 && (
                 <>
                   <button
@@ -747,6 +764,9 @@ function ChatDock({
                 </>
               )}
             </div>
+            {activeJob && (
+              <span className="ml-auto shrink-0 text-[10px] text-blox-soft">Running in background</span>
+            )}
             {bits !== null && !busy && (
               <span className="ml-auto hidden shrink-0 text-[11px] tabular-nums text-white/40 sm:block" title="Bits left today">
                 {bits.toLocaleString()} bits left
@@ -755,7 +775,7 @@ function ChatDock({
             {busy ? (
               <button
                 type="button"
-                onClick={chat.stop}
+                onClick={() => void chat.stop()}
                 className="flex shrink-0 items-center gap-2 rounded-full bg-white/10 py-1.5 pr-3.5 pl-1.5 text-sm hover:bg-white/15"
               >
                 <span className="grid size-6 place-items-center rounded-full bg-white/10">

@@ -112,7 +112,7 @@ export function readImage(file: File): Promise<string> {
 
 // ── Doodle canvas ──
 
-const COLORS = ["#111111", "#ffffff", "#e5484d", "#f5a524", "#30a46c", "#2f7dff", "#8e4ec6", "#8d6e63"];
+const COLORS = ["#111111", "#ffffff", "#e5484d", "#f5a524", "#2f7dff", "#7fb0ff", "#8e4ec6", "#8d6e63"];
 
 /** A small drawing pad; "Use doodle" returns a PNG data URL. */
 export function DoodlePad({ onUse, onCancel }: { onUse: (dataUrl: string) => void; onCancel: () => void }) {
@@ -231,7 +231,7 @@ export function Chip({
       title={title}
       onClick={onClick}
       className={`flex shrink-0 items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-medium transition-colors ${
-        active ? "bg-signal/90 text-[#0b1a12]" : "bg-white/[0.06] text-white/75 hover:bg-white/[0.1] hover:text-white"
+        active ? "bg-signal/90 text-white" : "bg-white/[0.06] text-white/75 hover:bg-white/[0.1] hover:text-white"
       }`}
     >
       {children}

@@ -7,12 +7,13 @@ import type { AgentEvent, AgentParams, ProviderId, ToolExecutor } from "./types"
 
 export * from "./types";
 export { PROVIDERS } from "./providers";
+export { OFFLINE_SYSTEM_PROMPT, OFFLINE_TOOLS, makeOfflineExecutor } from "./offline";
 
 const MAX_TOOL_RESULT_CHARS = 60_000;
 
 /** Executor that validates the model's arguments, runs them in Studio, and reports progress. */
 export function makeStudioExecutor(sessionId: string, emit: (e: AgentEvent) => void): ToolExecutor {
-  return async (callId, name, input) => {
+  return async (callId, name, input, signal) => {
     const valid = validateToolInput(name, input);
     let ok: boolean;
     let content: string;
@@ -20,7 +21,7 @@ export function makeStudioExecutor(sessionId: string, emit: (e: AgentEvent) => v
       ok = false;
       content = valid.error;
     } else {
-      const r = await bridge.runInStudio(sessionId, name, valid.data, name === "run_luau" ? 120_000 : 60_000);
+      const r = await bridge.runInStudio(sessionId, name, valid.data, name === "run_luau" ? 120_000 : 60_000, signal);
       ok = r.ok;
       content = r.ok ? JSON.stringify(r.result) : r.error;
     }

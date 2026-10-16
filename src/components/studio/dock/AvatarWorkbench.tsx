@@ -311,7 +311,7 @@ export default function AvatarWorkbench({
                   setPrompt(idea);
                   void generate(idea);
                 }}
-                className="mt-2 flex items-center gap-2 rounded-xl bg-signal px-4 py-2.5 text-sm font-semibold text-[#06140d] shadow-[0_10px_30px_-10px_rgba(52,224,161,0.8)] hover:brightness-105"
+                className="mt-2 flex items-center gap-2 rounded-xl bg-signal px-4 py-2.5 text-sm font-semibold text-white shadow-[0_10px_30px_-10px_rgba(47,125,255,0.8)] hover:brightness-105"
               >
                 <Glyph d={GLYPHS.sparkle} /> Random Idea
               </button>
