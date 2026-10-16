@@ -15,6 +15,7 @@ import type { BuildT } from "@/lib/openrouter";
 import { buildToParts } from "./nodes/ModelPreview";
 import { streamModel3d, type Model3DHandlers } from "./model3dStream";
 import { useLiveBuild } from "./useLiveBuild";
+import { useStudioMcp } from "./useStudioMcp";
 import { blenderAvailable, meshStore, runBlender, type WorkspaceMesh } from "./blenderMesh";
 import { applyEdit, toStudioProperties, type PartEdit } from "./sceneMath";
 import { useChat } from "./useChat";
@@ -113,6 +114,8 @@ export default function StudioApp() {
   const importInput = useRef<HTMLInputElement>(null);
   const primitiveCount = useRef(0);
   const connected = !!status?.connected;
+  // Roblox Studio reachable without the plugin, through Studio's built-in MCP server (chat only).
+  const mcp = useStudioMcp();
 
   const sceneApi = useScene(sessionId, connected);
   const { refresh: refreshScene } = sceneApi;
@@ -470,6 +473,15 @@ export default function StudioApp() {
           <span className="rounded-full bg-[#111318]/85 backdrop-blur-xl">
             <ConnectionPill status={status} />
           </span>
+          {!connected && mcp.studio && (
+            <span
+              title="Bloxy's chat reaches Roblox Studio through Studio's built-in MCP server. Install the plugin to also mirror the place here."
+              className="hidden items-center gap-1.5 rounded-full bg-blox/15 px-2.5 py-1.5 text-[11px] text-blox-soft backdrop-blur-xl sm:flex"
+            >
+              <span className="size-1.5 rounded-full bg-blox" />
+              Studio via MCP
+            </span>
+          )}
           <button
             onClick={() => setShowSettings(true)}
             aria-label="AI settings"

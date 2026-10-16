@@ -28,6 +28,14 @@ Browser (chat UI) ──POST /api/chat──▶ Next.js server ──▶ Claude 
 
 ## Run it locally
 
+**Windows, one click:** double-click `start.bat`. It checks Node.js, installs packages on the first run, finds Blender (for real 3D meshes), checks for Roblox Studio's built-in MCP server, opens Roblox Studio if it isn't running, starts Bloxy and opens http://localhost:3000/studio.
+
+**No plugin needed:** when Studio is open and its MCP server is on (Assistant panel, MCP settings), Bloxy's chat reaches Studio through Roblox's own `StudioMCP` server (`%LOCALAPPDATA%\Roblox\mcp.bat`): it reads the game tree and scripts, edits code, runs Luau, builds models and can use Roblox's mesh/material generators. The badge reads "Studio via MCP". The Bloxy plugin is still supported and also mirrors the place into the 3D workspace. Both are local only (never on Vercel).
+
+**Blender:** found automatically under Program Files (or set `BLENDER_PATH`). Blender-mode 3D models are then built for real in headless Blender.
+
+Or by hand:
+
 ```bash
 npm install
 npm run dev

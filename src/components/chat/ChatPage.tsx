@@ -14,6 +14,7 @@ import { MessageView, SettingsDialog } from "../studio/parts";
 import { useAccount } from "../studio/useAccount";
 import { useChat } from "../studio/useChat";
 import { useStudioSession } from "../useStudioSession";
+import { useStudioMcp } from "../studio/useStudioMcp";
 import { useSettings } from "../useSettings";
 
 const ModelPreview = dynamic(() => import("../studio/nodes/ModelPreview"), { ssr: false });
@@ -75,7 +76,9 @@ export default function ChatPage() {
   const [input, setInput] = useState("");
   const scrollRef = useRef<HTMLDivElement>(null);
   const textRef = useRef<HTMLTextAreaElement>(null);
-  const connected = !!status?.connected;
+  const mcp = useStudioMcp();
+  // Plugin or Roblox Studio's built-in MCP server: either way Bloxy builds straight into Studio.
+  const connected = !!status?.connected || !!mcp.studio;
   const { messages, busy } = chat;
 
   useEffect(() => {
@@ -111,7 +114,7 @@ export default function ChatPage() {
             className={`hidden items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] sm:flex ${connected ? "bg-blox/15 text-blox-soft" : "bg-white/[0.05] text-white/45"}`}
           >
             <span className={`size-1.5 rounded-full ${connected ? "bg-blox" : "bg-white/30"}`} />
-            {connected ? "Studio connected" : "Studio offline"}
+            {status?.connected ? "Studio connected" : mcp.studio ? "Studio connected (MCP)" : "Studio offline"}
           </span>
           <Link href="/studio" className="rounded-full border border-white/10 px-3 py-1.5 text-xs text-white/70 hover:bg-white/[0.06] hover:text-white">
             Open Studio

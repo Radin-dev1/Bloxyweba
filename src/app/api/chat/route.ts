@@ -13,6 +13,7 @@ import {
 } from "@/lib/agent";
 import { BIT_ESTIMATES, refund, reserve, resolveBilling, settle } from "@/lib/bits";
 import { pickSkills, skillBlock } from "@/lib/skills";
+import { MCP_SYSTEM_PROMPT, makeMcpExecutor, mcpStudio, mcpTools } from "@/lib/studioMcp";
 import { SYSTEM_PROMPT } from "@/lib/tools";
 
 // Vercel Hobby allows at most 300s per function; long agent runs continue in the next message.
@@ -86,8 +87,10 @@ export async function POST(request: Request) {
   // Without Studio the chat still works: it can talk, write Luau and build into the Bloxy workspace.
   const status = sessionId ? await bridge.getSessionStatus(sessionId).catch(() => null) : null;
   const studioConnected = !!status?.connected;
+  // No plugin? Roblox Studio's own MCP server (local only) may still reach an open Studio.
+  const mcp = studioConnected ? null : await mcpStudio();
   const jobCreated = sessionId ? await bridge.createChatJob(sessionId, jobId).catch(() => false) : false;
-  if (!sessionId || !jobCreated) return streamReply(request, { provider, model, apiKey, history, billing, skills });
+  if (!sessionId || !jobCreated) return streamReply(request, { provider, model, apiKey, history, billing, skills, mcp });
 
   const controller = new AbortController();
   let writes = Promise.resolve();
@@ -114,10 +117,7 @@ export async function POST(request: Request) {
         history,
         emit,
         signal: controller.signal,
-        executeTool: studioConnected ? makeStudioExecutor(sessionId, emit) : makeOfflineExecutor(emit),
-        ...(studioConnected
-          ? { system: SYSTEM_PROMPT + skills }
-          : { tools: OFFLINE_TOOLS, system: OFFLINE_SYSTEM_PROMPT + skills }),
+        ...(await agentSetup(studioConnected ? sessionId : undefined, mcp, skills, emit)),
         billing,
       });
       await writes;
@@ -190,9 +190,35 @@ type StreamRun = {
   history: { role: "user" | "assistant"; content: string }[];
   billing?: StepBilling;
   skills: string;
+  mcp: { id: string; name: string } | null;
 };
 
-/** Runs the agent in offline mode and streams its events back as newline-delimited JSON. */
+/**
+ * Tools, prompt and executor for this run: the Bloxy plugin when it's connected, else Roblox
+ * Studio's built-in MCP server when a Studio is reachable, else offline (build into the workspace).
+ */
+async function agentSetup(
+  pluginSession: string | undefined,
+  mcp: { id: string; name: string } | null,
+  skills: string,
+  emit: (e: AgentEvent) => void,
+) {
+  if (pluginSession) return { executeTool: makeStudioExecutor(pluginSession, emit), system: SYSTEM_PROMPT + skills };
+  if (mcp) {
+    try {
+      return {
+        executeTool: makeMcpExecutor(mcp.id, emit),
+        tools: await mcpTools(OFFLINE_TOOLS[0].parameters),
+        system: MCP_SYSTEM_PROMPT + skills,
+      };
+    } catch {
+      // Fall through to offline if the MCP server went away.
+    }
+  }
+  return { executeTool: makeOfflineExecutor(emit), tools: OFFLINE_TOOLS, system: OFFLINE_SYSTEM_PROMPT + skills };
+}
+
+/** Runs the agent (MCP or offline mode) and streams its events back as newline-delimited JSON. */
 function streamReply(request: Request, run: StreamRun) {
   const encoder = new TextEncoder();
   const tidy = paragraphs();
@@ -203,14 +229,12 @@ function streamReply(request: Request, run: StreamRun) {
         if (!closed) controller.enqueue(encoder.encode(JSON.stringify(tidy(raw)) + "\n"));
       };
       try {
-        const { skills, ...agent } = run;
+        const { skills, mcp, ...agent } = run;
         await runAgent(run.provider, {
           ...agent,
           emit,
           signal: request.signal,
-          executeTool: makeOfflineExecutor(emit),
-          tools: OFFLINE_TOOLS,
-          system: OFFLINE_SYSTEM_PROMPT + skills,
+          ...(await agentSetup(undefined, mcp, skills, emit)),
         });
       } catch (err) {
         if (!request.signal.aborted) emit({ type: "error", message: describeError(err) });
