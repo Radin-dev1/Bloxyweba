@@ -35,6 +35,9 @@ import type { ScenePart } from "./useScene";
 
 const Viewport3D = dynamic(() => import("./Viewport3D"), { ssr: false });
 const NodeEditor = dynamic(() => import("./NodeEditor"), { ssr: false });
+const ChatView = dynamic(() => import("./ChatView"), { ssr: false });
+const LibraryView = dynamic(() => import("./LibraryView"), { ssr: false });
+const ScriptsView = dynamic(() => import("./ScriptsView"), { ssr: false });
 const IdeaForge = dynamic(() => import("./dock/IdeaForge"), { ssr: false });
 const AvatarWorkbench = dynamic(() => import("./dock/AvatarWorkbench"), { ssr: false });
 const ExportPanel = dynamic(() => import("./dock/ExportPanel"), { ssr: false });
@@ -43,7 +46,31 @@ const EnvironmentPanel = dynamic(() => import("./dock/EnvironmentPanel"), { ssr:
 const EASE = "ease-[var(--ease-spring)]";
 const PLUGIN_VERSION = "0.4.0";
 
-type Tab = "workspace" | "nodes";
+type Tab = "workspace" | "nodes" | "chat" | "library" | "scripts";
+
+const TABS: { id: Tab; label: string }[] = [
+  { id: "workspace", label: "3D Workspace" },
+  { id: "nodes", label: "Nodes" },
+  { id: "chat", label: "Chat" },
+  { id: "library", label: "Library" },
+  { id: "scripts", label: "Scripts" },
+];
+
+// Shared with the /chat page (same conversation): which tool call built or sculpted what.
+const BUILDS_KEY = "bloxy.chat.builds.v1";
+const MESHES_KEY = "bloxy.chat.meshes.v1";
+function loadJson<T>(key: string, fallback: T): T {
+  try {
+    return JSON.parse(localStorage.getItem(key) || "null") ?? fallback;
+  } catch {
+    return fallback;
+  }
+}
+function saveJson(key: string, value: unknown) {
+  try {
+    localStorage.setItem(key, JSON.stringify(value));
+  } catch {}
+}
 type WorkspacePanel = "explorer" | "properties" | "view" | "environment" | "connect" | null;
 
 const RAIL_ITEMS: { id: Exclude<WorkspacePanel, null>; label: string; icon: React.ReactNode }[] = [
@@ -129,15 +156,31 @@ export default function StudioApp() {
     },
     [refreshScene, refreshAccount],
   );
+  // What each chat tool call built, for the previews in the Chat tab (last 40 kept).
+  const [chatBuilds, setChatBuilds] = useState<Record<string, BuildT>>(() => loadJson(BUILDS_KEY, {}));
+  const [chatMeshes, setChatMeshes] = useState<Record<string, { name: string; tris: number }>>(() => loadJson(MESHES_KEY, {}));
+  const remember = <T,>(set: React.Dispatch<React.SetStateAction<Record<string, T>>>, key: string, id: string, value: T) =>
+    set((all) => {
+      const next = { ...all, [id]: value };
+      for (const k of Object.keys(next).slice(0, Math.max(0, Object.keys(next).length - 40))) delete next[k];
+      saveJson(key, next);
+      return next;
+    });
   const chat = useChat({
     sessionId,
     settings,
     onTurnEnd,
     onNeedsKey: () => setShowSettings(true),
     // Offline, the agent builds into the local workspace (insertBuild is declared below; this runs later).
-    onBuild: (build) => void playIntoWorkspace(build),
+    onBuild: (build, id) => {
+      remember(setChatBuilds, BUILDS_KEY, id, build);
+      void playIntoWorkspace(build);
+    },
     // A mesh the agent sculpted in Blender lands in the local workspace (placeMesh is declared below).
-    onMesh: (mesh) => placeMesh(mesh),
+    onMesh: (mesh) => {
+      remember(setChatMeshes, MESHES_KEY, mesh.id, { name: mesh.name, tris: mesh.tris });
+      placeMesh(mesh);
+    },
   });
   // Messages typed in the Bloxy plugin inside Roblox Studio run here too.
   usePluginInbox(sessionId, !!status?.connected, chat.send);
@@ -455,6 +498,20 @@ export default function StudioApp() {
     }
   };
 
+  /** Switches to the 3D workspace and frames a model (part-built or mesh) by name. */
+  const showModel = (name: string) => {
+    setTab("workspace");
+    const mesh = meshModels.find((m) => m.name === name);
+    if (mesh) {
+      setSelectedMesh(name);
+      return focusOn(mesh.origin);
+    }
+    const own = parts.filter((p) => p.path.startsWith(`Workspace.${name}.`));
+    if (!own.length) return;
+    const avg = (i: number) => own.reduce((sum, p) => sum + p.cframe[i], 0) / own.length;
+    focusOn([avg(0), 0, avg(2)]);
+  };
+
   /** Places a sculpted mesh from the chat; sculpting the same name again replaces it in place. */
   const placeMesh = (m: SculptedMesh) => addMesh({ ...m, glb: toBytes(m.glb) });
 
@@ -560,6 +617,29 @@ export default function StudioApp() {
             environment={environment}
             onEdit={onEdit}
           />
+        ) : tab === "chat" ? (
+          <ChatView
+            chat={chat}
+            settings={settings}
+            setSettings={setSettings}
+            bits={settings.provider === "openrouter" && !settings.openrouterKey && account?.bitsEnabled ? account.bits : null}
+            builds={chatBuilds}
+            meshIds={Object.fromEntries(Object.entries(chatMeshes).map(([id, m]) => [id, m.name]))}
+            meshModels={meshModels}
+            studioLabel={connected ? "Connected to Roblox Studio: it builds straight into your place." : "Studio isn't connected, so models land in your Bloxy workspace."}
+            onShow={showModel}
+          />
+        ) : tab === "library" ? (
+          <LibraryView parts={parts} meshes={meshModels} connected={connected} onShow={showModel} onDeleteModel={(path) => void deletePath(path)} onDeleteMesh={(name) => void deleteMesh(name)} />
+        ) : tab === "scripts" ? (
+          <ScriptsView
+            sessionId={sessionId}
+            connected={!!status?.connected}
+            onAsk={(text) => {
+              setTab("chat");
+              void chat.send(text);
+            }}
+          />
         ) : (
           <div className="h-full bg-ink">
             <NodeEditor
@@ -588,20 +668,28 @@ export default function StudioApp() {
         </Link>
 
         <div className="pointer-events-auto absolute left-1/2 flex -translate-x-1/2 items-center gap-1 rounded-full border border-white/10 bg-[#111318]/85 p-1 backdrop-blur-xl">
-          {(["workspace", "nodes"] as const).map((t) => (
+          {TABS.map((t) => (
             <button
-              key={t}
+              key={t.id}
               onClick={() => {
-                setTab(t);
+                setTab(t.id);
                 setWorkspacePanel(null);
               }}
-              className={`rounded-full px-4 py-1.5 text-sm transition-all duration-500 ${EASE} ${
-                tab === t
+              className={`relative rounded-full px-3 py-1.5 text-sm whitespace-nowrap transition-all duration-500 sm:px-4 ${EASE} ${
+                tab === t.id
                   ? "bg-white/[0.12] text-white shadow-[inset_0_1px_1px_rgba(255,255,255,0.1)]"
                   : "text-white/50 hover:text-white/85"
               }`}
             >
-              {t === "workspace" ? "3D Workspace" : "Nodes"}
+              {t.id === "workspace" ? (
+                <>
+                  <span className="hidden md:inline">3D Workspace</span>
+                  <span className="md:hidden">3D</span>
+                </>
+              ) : (
+                t.label
+              )}
+              {t.id === "chat" && chat.busy && tab !== "chat" && <span className="absolute top-1 right-1.5 size-1.5 animate-pulse rounded-full bg-blox" />}
             </button>
           ))}
         </div>

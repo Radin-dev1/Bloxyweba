@@ -38,6 +38,27 @@ const Body = z.discriminatedUnion("tool", [
     tool: z.literal("get_studio_state"),
     args: z.object({}).default({}),
   }),
+  // The Scripts tab: list, search, read and save scripts (each save is one undo step in Studio).
+  z.object({
+    sessionId: z.string().min(1),
+    tool: z.literal("search_instances"),
+    args: z.object({ className: z.literal("LuaSourceContainer"), name: z.string().max(100).optional(), limit: z.number().int().min(1).max(500).optional() }),
+  }),
+  z.object({
+    sessionId: z.string().min(1),
+    tool: z.literal("grep_scripts"),
+    args: z.object({ pattern: z.string().min(1).max(200), limit: z.number().int().min(1).max(200).optional() }),
+  }),
+  z.object({
+    sessionId: z.string().min(1),
+    tool: z.literal("read_script"),
+    args: z.object({ path: z.string().min(1).max(500) }),
+  }),
+  z.object({
+    sessionId: z.string().min(1),
+    tool: z.literal("write_script"),
+    args: z.object({ path: z.string().min(1).max(500), source: z.string().max(400_000) }),
+  }),
 ]);
 
 export async function POST(request: Request) {
