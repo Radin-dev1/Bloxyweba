@@ -1,4 +1,6 @@
 import {
+  INBOX_MAX,
+  INBOX_TEXT_MAX,
   NOT_CONNECTED,
   PAIR_CODE_TTL_MS,
   PLUGIN_STALE_MS,
@@ -36,6 +38,8 @@ type Session = {
   waiters: Set<() => void>;
   createdAt: number;
   jobs?: Map<string, ChatJob>;
+  latestJob?: string;
+  inbox?: string[];
 };
 
 type Store = {
@@ -230,6 +234,7 @@ export const memoryBridge: Bridge = {
     const jobs = sessionJobs(s);
     if (jobs.has(jobId)) return false;
     jobs.set(jobId, { id: jobId, status: "running", events: [], updatedAt: Date.now() });
+    s.latestJob = jobId;
     return true;
   },
 
@@ -266,5 +271,27 @@ export const memoryBridge: Bridge = {
     job.status = "stopped";
     job.updatedAt = Date.now();
     return true;
+  },
+
+  async pluginSession(pluginToken) {
+    return sessionForPlugin(pluginToken)?.id ?? null;
+  },
+
+  async pushInbox(sessionId, text) {
+    const s = store.sessions.get(sessionId);
+    if (!s) return false;
+    s.inbox = [...(s.inbox ?? []), text.slice(0, INBOX_TEXT_MAX)].slice(-INBOX_MAX);
+    return true;
+  },
+
+  async takeInbox(sessionId) {
+    const s = store.sessions.get(sessionId);
+    const items = s?.inbox ?? [];
+    if (s) s.inbox = [];
+    return items;
+  },
+
+  async latestChatJob(sessionId) {
+    return store.sessions.get(sessionId)?.latestJob ?? null;
   },
 };

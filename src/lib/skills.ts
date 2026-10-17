@@ -1,11 +1,16 @@
 /**
- * Bloxy's skill packs: building, modeling, map and texture know-how distilled from the
- * roblox-3d-model, roblox-texture-gen, building-maps, building-3d-objects and roblox-map
- * skills. Each pack is loaded only when a request needs it, so the prompt stays small.
- * Numbers here were measured in Studio by those skills; keep them, don't round them.
+ * Bloxy's skill packs: building, modeling, map, texture, sculpting, scripting, gameplay, UI and
+ * game-design know-how, combined into one library. Each pack is loaded only when a request
+ * needs it, so the prompt stays small. Numbers here were measured in Studio by the source
+ * skills; keep them, don't round them.
+ *
+ * Written in our own words from (credit, see docs/skill-sources.md): TabooHarmony/roblox-brain
+ * (MIT), AshExplained/roblox-skills (MIT), EL4CTEO/blender-skills (MIT), plus facts learned from
+ * SyphoDev-yt/roblox-ai-skills, brockmartin/roblox-game-skill and sentinelcore/roblox-skills, and
+ * the roblox-3d-model, roblox-texture-gen, building-maps, building-3d-objects and roblox-map skills.
  */
 
-export type SkillId = "core" | "modeling" | "maps" | "textures" | "sculpting";
+export type SkillId = "core" | "modeling" | "maps" | "textures" | "sculpting" | "scripting" | "gameplay" | "ui" | "design";
 
 export const SKILLS: Record<SkillId, { title: string; text: string }> = {
   core: {
@@ -62,6 +67,9 @@ export const SKILLS: Record<SkillId, { title: string; text: string }> = {
 - Symmetry: model half and add a MIRROR modifier. Repeats (petals, leaves, spikes): ARRAY, or a loop that rotates copies with math.radians.
 - Always: bpy.ops.object.shade_smooth() on organic parts, a material on every object (Principled Base Color + Roughness AND diffuse_color), 2-3 colors per object (a body color, a darker shade, one accent). Keep under ~10,000 triangles: SUBSURF levels 1-2 on 32-48 segment primitives is enough.
 - Real proportions matter more than detail: a pickle is about 3x longer than wide, an apple slightly wider than tall, a cat's head about 1/3 of its body length. Model at real size in meters and pass size_studs for the Roblox size.
+- Blender 5.x scripting: prefer the data API (bpy.data, bmesh, foreach_get/set) over bpy.ops; Sculpt Mode operators crash in background mode, so never enter Sculpt Mode. Apply scale (transform_apply(scale=True)) before bevel, boolean or solidify, since their distances are in object space. New materials already contain a Principled BSDF: find nodes by type (n.type == "BSDF_PRINCIPLED"), not by name. Renamed inputs: Specular -> "Specular IOR Level", Emission -> "Emission Color", Transmission -> "Transmission Weight", Clearcoat -> "Coat Weight", Sheen -> "Sheen Weight". mesh.use_auto_smooth is gone: use shade_smooth or shade_smooth_by_angle.
+- Hard-surface details on a mesh: bevel width about 0.5-2% of the part size, limit by angle 30 degrees, clamp overlap on; cylinder segments by size: bolts 6-8, handles 12-16, barrels 24-32. Boolean cutters must be closed and reach slightly past the surface (coplanar faces fail and flicker).
+- Colors: base color is pure albedo (no baked light or shadow); dielectric colors sit roughly between sRGB 30 and 240. Metallic is 0 or 1, never in between; roughness carries the realism, so vary it a little.
 - Example (a bumpy curved pickle lying on its side):
   import bpy, math
   def mat(name, rgb, rough=0.55):
@@ -79,6 +87,41 @@ export const SKILLS: Record<SkillId, { title: string; text: string }> = {
   stem = bpy.context.object; stem.data.materials.append(mat("Stem", (0.09, 0.15, 0.04), 0.8)); stem.parent = body
   body.rotation_euler = (math.radians(90), 0, 0)`,
   },
+  scripting: {
+    title: "Luau scripting, architecture and security",
+    text: `- Luau traps: only false and nil are falsy (0, "" and {} are truthy); ~= is not-equal; arrays are 1-based and # is only reliable without nil gaps; dictionary order is unspecified; "x or fallback" also replaces a valid false; NaN ~= NaN, so check x ~= x before comparing. Prefer if-expressions (local s = if on then "On" else "Off") and backtick strings (\`{name}: {score}\`). JavaScript/Python syntax (===, null, ?., arrow functions, list comprehensions) is not Luau.
+- Architecture: for every behaviour name the authoritative state and who may change it, what instances/connections it owns and when it starts and stops. Group code by feature; split server/client/shared only at real runtime boundaries; shared modules hold no secrets or authoritative state. Call modules directly; no event bus or manager ceremony to hide a plain dependency. Keep module top level cheap and non-yielding; give WaitForChild a timeout for replicated things.
+- Networking: every client argument is attacker-controlled. On the server validate type, size, ownership, state, distance and cooldown; read prices, damage and rewards from server-owned tables. RemoteEvent for most requests; keep RemoteFunctions short; UnreliableRemoteEvent only for replaceable data (1000-byte cap). Tables arrive as copies without metatables or functions; nil truncates arrays. Rate-limit remotes and log suspicion with thresholds; never kick on one bad packet.
+- Security: the client is always compromised. Never let it decide damage, currency, inventory, permissions, hits or loot. Purchases: grant only in a server ProcessReceipt handler that is idempotent and returns PurchaseGranted only after the grant is saved; PromptProductPurchaseFinished is not proof. Treat ProximityPrompt/ClickDetector input like a remote. Filter player text with TextService.
+- Saves (DataStores): a versioned, serialisable template deep-copied per player; UpdateAsync for read-modify-write wrapped in pcall with retries; session locking so two servers never write one profile (or ProfileStore); save on important changes and on leave, and finish pending saves in BindToClose (about 30 seconds total). Only primitives/arrays/dictionaries; no NaN, infinities or broken UTF-8 (one bad value fails the whole write). Keys like player_<UserId>; separate store names for Studio tests.
+- Performance: measure first (MicroProfiler Ctrl+F6, F9 console, Script Profiler). Targets: server heartbeat under 16 ms, 60 FPS desktop, 45 mobile. Disconnect connections and destroy instances you own (leaks = callbacks firing for players who left); pool frequently spawned objects. StreamingEnabled is on by default: streamed-out parts are parented to nil, so FindFirstChild can return nil.
+- Debugging: first make a fast, repeatable repro (playtest steps or a direct execute_luau call), read the Output errors, list 3-5 ranked hypotheses, change one thing at a time, tag temporary prints (e.g. [DEBUG-a4f2]) and remove them after. Fix the cause with the smallest change, then re-run the repro.`,
+  },
+  gameplay: {
+    title: "Gameplay systems: combat, NPCs, physics, animation, lighting",
+    text: `- Combat: the client sends intent (aim direction, target candidate); the server checks range, cooldown, line of sight, team and state, then applies damage. Hitscan with raycasts; Touched only for slow physics projectiles, which always get a lifetime. Readability: anticipation, action, impact, recovery; clear feedback for hit, miss, crit, block, dodge and death; enemy tells and fair counterplay.
+- NPCs: PathfindingService:CreatePath({AgentRadius = 2, AgentHeight = 5, AgentCanJump = true, Costs = {Water = 20}}), ComputeAsync, check path.Status, follow waypoints (Jump action -> humanoid.Jump = true), recompute on Blocked with a bounded retry. PathfindingModifier regions set costs (math.huge = impassable, PassThrough for doors). AI as a state machine: idle -> patrol -> chase -> attack -> flee -> dead, where each transition owns its cleanup.
+- Physics: constraints connect two Attachments (both must be set, or it silently does nothing) and never move Anchored parts. Mechanical: HingeConstraint (Motor/Servo), Prismatic, BallSocket, Weld/Rigid; motion: AlignPosition, AlignOrientation, LinearVelocity, AngularVelocity. Vehicles: motor hinge wheels, SpringConstraint suspension, servo steering, CustomPhysicalProperties for friction. Keep gameplay-critical physics server-owned (SetNetworkOwner(nil)) and validate anything a player simulates.
+- Animation and VFX: load tracks through an Animator; set AnimationTrack.Priority on purpose; use GetMarkerReachedSignal for timed cues. Burst particles: Rate = 0 and :Emit(n) with a short lifetime, pooled. Effects read as warning, contact, peak, fade. Beams and trails need two attachments. Tween only a few properties and clean temporary effects up (Debris:AddItem). TweenService can't tween a Model: tween a CFrameValue and PivotTo.
+- Lighting: ClockTime 0-24, Brightness about 2, Ambient/OutdoorAmbient for shadow fill, ShadowSoftness 0.2; Atmosphere Density below 0.5 (0.1-0.3 for a light haze); BloomEffect with Threshold above 0.7. Lighting.Technology can't be set from a script.`,
+  },
+  ui: {
+    title: "Game UI and UX",
+    text: `- Mobile first: design on the smallest landscape phone with touch controls, then grow. Keep interactive UI inside the safe area (GuiService insets) and clear of the top bar, thumbstick, jump button and chat. Big touch targets with space between them; nothing important in the thumb zones.
+- Scale with Scale-based sizes plus UIAspectRatioConstraint, UISizeConstraint and UITextSizeConstraint; let UIListLayout/UIGridLayout own repeated layout. Check every pair of elements that can show together; reflow instead of shrinking text.
+- UI shows server state; a button is never an authority boundary (the server re-checks every purchase or action). Clean up connections when a screen closes; open and close it repeatedly to catch leaks. Put loading UI in ReplicatedFirst.
+- Gamepad/console: one SelectedObject owner, SelectionGroup bounds, focus restored after closing a menu, and a TV-safe margin.
+- First session: put the player into the core action within 10-30 seconds, spawn facing the first objective, teach by doing (markers and contextual prompts, never walls of text), make rewards loud but short, and keep deep menus optional at first. The HUD shows the objective, currency, progress and the next reward.`,
+  },
+  design: {
+    title: "Game design, genres and monetization",
+    text: `- Three loops must each work: the core loop (moment to moment), the meta game (hour to hour) and long-term progression (day to day). If the raw actions aren't fun, nothing above them saves the game.
+- Retention phases: days 0-7 understandability, novelty and stability; 7-30 progression, mastery and reasons to return; 30-90 social comparison and live events; 90+ community.
+- Economy: every currency source needs a sink; prices scale with the power curve; watch hoarding, choke points and inflation. Grind is a feeling: fix it with juice, skill ceilings and short measurable goals.
+- Levels: safe introduction, development, twist, conclusion; guide with coins, light and landmarks instead of text; deaths should feel like the player's fault.
+- Genre patterns: simulator (satisfying repeat action, upgrade ladder, rebirth, pets, zones); tycoon (visible build progress, income pacing, rebirth); obby (instant challenge, fast retries, checkpoints, cosmetics); RPG (quests, zones, loot, bosses, parties); pet collector (hatching, rarity, trading, index); tower defense (waves, unit upgrades, co-op); survival (resources, risk/reward, base building); horror (atmosphere, pursuit, team objectives); battlegrounds (readable combat, ability balance, anti-exploit). For any genre define the first 30 seconds, core loop, progression, social hook, monetization fit and the twist that makes it different.
+- Monetization: prompt purchases from the client but grant value only on the server. Game Passes: one server table of pass id -> benefit, applied on join and on purchase through the same path. Developer Products are repeatable and granted in ProcessReceipt. Check PolicyService before paid random items (loot boxes) and offer the allowed alternatives. Monetize convenience, cosmetics and time, never basic fairness.`,
+  },
   textures: {
     title: "Textures, materials and skins",
     text: `- First choice for surfaces: Roblox Materials plus a fitting Color, and MaterialVariant for custom tiling materials across many parts. MeshParts take a SurfaceAppearance (ColorMap, NormalMap, RoughnessMap, MetalnessMap), each capped at 1024x1024.
@@ -94,13 +137,19 @@ const WORDS: Record<Exclude<SkillId, "core">, RegExp> = {
   maps: /\b(map|level|arena|obby|obbies|parkour|lobby|hub|town|village|city|world|island|zone|terrain|spawn|course|track|race|biome|environment|forest|dungeon|maze|plaza|park|farm|base|battleground|tycoon)\b/i,
   textures: /\b(texture|textures|skin|skins|reskin|retexture|material|materials|decal|surface ?appearance|camo|paint|painted|pattern|tileable|pbr|normal map|shiny|metallic|wood ?grain)\b/i,
   sculpting: /\b(sculpt|sculpted|sculpture|organic|curvy|smooth|mesh|food|fruit|vegetable|pickle|banana|apple|carrot|pumpkin|mushroom|cake|donut|burger|egg|animal|creature|monster|character|cat|dog|fish|bird|frog|dragon|snake|slime|blob|plant|flower|rock|stone|shell|statue|bust|head|tree)s?\b/i,
+  scripting: /\b(script|scripts|scripting|code|coding|luau|lua|function|module|remote|remotes|remoteevent|server|client|datastore|datastores|save|saves|saving|leaderstats|leaderboard|bug|error|errors|fix|debug|crash|lag|exploit|exploiters|anti.?cheat|secure|security|system|systems|api|tween|attribute)s?\b/i,
+  gameplay: /\b(combat|fight|fighting|attack|damage|health|weapon|sword|gun|ability|abilities|skill|skills|npc|npcs|enemy|enemies|boss|zombie|ai|pathfinding|physics|vehicle|car|ragdoll|projectile|bullet|animation|animate|vfx|particle|particles|effect|effects|explosion|lighting|day.?night|sun|fog|atmosphere)s?\b/i,
+  ui: /\b(ui|gui|hud|menu|menus|button|buttons|shop|store|inventory|screen|frame|label|dialog|popup|notification|health ?bar|interface|ux|onboarding|tutorial|mobile|touch)s?\b/i,
+  design: /\b(game ?idea|idea|ideas|design|genre|simulator|tycoon|obby|rpg|horror|battlegrounds?|tower defense|survival|pet|pets|loop|retention|progression|economy|monetiz\w*|gamepass(?:es)?|game pass(?:es)?|robux|developer product|rebirth|prestige|plan|concept)s?\b/i,
   modeling: /\b(build|make|create|model|prop|house|home|car|vehicle|truck|boat|plane|sword|gun|weapon|tool|tree|furniture|chair|table|bed|castle|tower|bridge|statue|character|creature|animal|robot|shop|building|door|fence|lamp|crate|chest|object|3d)\b/i,
 };
+
+const BUILDING: SkillId[] = ["modeling", "maps", "textures", "sculpting"];
 
 /** Which skill packs a request needs, from the latest user message (core whenever something gets built). */
 export function pickSkills(text: string): SkillId[] {
   const picked = (Object.keys(WORDS) as Exclude<SkillId, "core">[]).filter((id) => WORDS[id].test(text));
-  return picked.length ? ["core", ...picked] : [];
+  return picked.some((id) => BUILDING.includes(id)) ? ["core", ...picked] : picked;
 }
 
 export function skillBlock(ids: SkillId[]) {

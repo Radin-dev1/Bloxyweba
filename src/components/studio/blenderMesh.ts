@@ -62,8 +62,9 @@ export async function runBlender(script: string, targetStuds?: number, signal?: 
 
 // ── Workspace meshes, persisted in IndexedDB ──
 
-export type StoredMesh = { name: string; glb: Uint8Array; origin: [number, number, number]; dims: [number, number, number]; tris: number };
-export type WorkspaceMesh = { name: string; url: string; origin: [number, number, number]; dims: [number, number, number]; tris: number };
+/** fit: scale the longest side to this many studs in the browser (the server couldn't size it). */
+export type StoredMesh = { name: string; glb: Uint8Array; origin: [number, number, number]; dims: [number, number, number]; tris: number; fit?: number };
+export type WorkspaceMesh = { name: string; url: string; origin: [number, number, number]; dims: [number, number, number]; tris: number; fit?: number };
 
 const DB = "bloxy";
 const STORE = "meshes";
@@ -100,6 +101,7 @@ export const meshStore = {
       origin: r.origin,
       dims: r.dims,
       tris: r.tris,
+      fit: r.fit,
       url: URL.createObjectURL(new Blob([r.glb as BlobPart], { type: "model/gltf-binary" })),
     }));
   },

@@ -1,5 +1,7 @@
 import { Redis } from "@upstash/redis";
 import {
+  INBOX_MAX,
+  INBOX_TEXT_MAX,
   NOT_CONNECTED,
   PAIR_CODE_TTL_MS,
   PLUGIN_STALE_MS,
@@ -232,6 +234,7 @@ export function createRedisBridge(redis: Redis): Bridge {
       if (!ok) return false;
       await redis.set(`${P}chat-owner:${jobId}`, sessionId, { ex: SESSION_TTL_S });
       await redis.set(`${P}chat-seq:${jobId}`, "0", { ex: SESSION_TTL_S });
+      await redis.set(`${P}chat-latest:${sessionId}`, jobId, { ex: SESSION_TTL_S });
       return true;
     },
 
@@ -279,6 +282,31 @@ export function createRedisBridge(redis: Redis): Bridge {
       const status = await redis.get<string>(jobKey);
       if (!status || status === "stopped" || status === "completed" || status === "error") return false;
       return (await redis.set(jobKey, "stopped", { ex: SESSION_TTL_S })) === "OK";
+    },
+
+    async pluginSession(pluginToken) {
+      return (await sessionForPlugin(pluginToken)) ?? null;
+    },
+
+    async pushInbox(sessionId, text) {
+      if (!(await session(sessionId))) return false;
+      const key = `${P}inbox:${sessionId}`;
+      await redis.pipeline()
+        .rpush(key, text.slice(0, INBOX_TEXT_MAX))
+        .ltrim(key, -INBOX_MAX, -1)
+        .expire(key, SESSION_TTL_S)
+        .exec();
+      return true;
+    },
+
+    async takeInbox(sessionId) {
+      const key = `${P}inbox:${sessionId}`;
+      const [items] = await redis.multi().lrange<string>(key, 0, -1).del(key).exec<[string[], number]>();
+      return items ?? [];
+    },
+
+    async latestChatJob(sessionId) {
+      return (await redis.get<string>(`${P}chat-latest:${sessionId}`)) ?? null;
     },
   };
 }

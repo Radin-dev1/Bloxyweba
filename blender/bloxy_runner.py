@@ -18,6 +18,7 @@ turns the result into a Roblox-ready asset:
 
 import json
 import math
+import os
 import sys
 import traceback
 
@@ -78,13 +79,32 @@ def tri_count(obj, depsgraph):
 
 bpy.ops.wm.read_factory_settings(use_empty=True)
 
-# 1. Run the model script.
+# 1. Run the model script, or import a mesh file (e.g. from an open-source 3D generator or a
+#    CC0 library). Imported glTF is a triangle soup with split normals: weld it first, or
+#    decimation under-reduces and shading breaks.
+imported = script_path.lower().endswith((".glb", ".gltf"))
 try:
-    with open(script_path, encoding="utf-8") as f:
-        code = f.read()
-    exec(compile(code, "bloxy_model.py", "exec"), {"__name__": "__main__"})
+    if imported:
+        code = ""
+        bpy.ops.import_scene.gltf(filepath=script_path)
+        for o in [o for o in bpy.context.scene.objects if o.type == "MESH"]:
+            bpy.context.view_layer.objects.active = o
+            o.select_set(True)
+            try:
+                bpy.ops.mesh.customdata_custom_splitnormals_clear()
+            except Exception:
+                pass
+            bpy.ops.object.mode_set(mode="EDIT")
+            bpy.ops.mesh.select_all(action="SELECT")
+            bpy.ops.mesh.remove_doubles(threshold=0.0001)
+            bpy.ops.object.mode_set(mode="OBJECT")
+            o.select_set(False)
+    else:
+        with open(script_path, encoding="utf-8") as f:
+            code = f.read()
+        exec(compile(code, "bloxy_model.py", "exec"), {"__name__": "__main__"})
 except Exception:
-    report(ok=False, error=explain_error(traceback.format_exc(), code))
+    report(ok=False, error=explain_error(traceback.format_exc(), code) if code else traceback.format_exc()[-2000:])
     sys.exit(0)
 
 scene = bpy.context.scene
@@ -126,6 +146,83 @@ if tris_before > max_tris:
 depsgraph = bpy.context.evaluated_depsgraph_get()
 tris_after = sum(tri_count(o, depsgraph) for o in meshes)
 
+# 3b. Generated meshes come back white. Paint them from their concept image: each vertex takes
+#     the colour at the same spot of the subject seen from the front (x across, z up), and
+#     surfaces facing sideways fall back to the subject's median colour instead of a smear.
+concept = os.environ.get("BLOXY_CONCEPT", "")
+painted = False
+if imported and concept and os.path.exists(concept):
+    try:
+        import numpy as np
+
+        img = bpy.data.images.load(concept)
+        w, h = img.size
+        px = np.empty(w * h * 4, dtype=np.float32)
+        img.pixels.foreach_get(px)
+        px = px.reshape(h, w, 4)[:, :, :3]  # rows bottom first, like Blender's z
+        if img.is_float:  # 16-bit/float images load as linear light: back to sRGB like 8-bit ones
+            px = np.where(px <= 0.0031308, px * 12.92, 1.055 * np.power(np.clip(px, 0, None), 1 / 2.4) - 0.055)
+        # Subject = whatever differs from the background, read off the image border (concepts
+        # are asked for on white, but models often give light grey or a soft gradient).
+        border = np.concatenate([px[0], px[-1], px[:, 0], px[:, -1]])
+        bg = np.median(border, axis=0)
+        mask = np.abs(px - bg).max(axis=2) > 0.1
+        ys, xs = np.nonzero(mask)
+        if len(xs) > 0.02 * w * h:
+            x0, x1, y0, y1 = xs.min(), xs.max(), ys.min(), ys.max()
+            median = np.median(px[mask], axis=0)
+            lo_all = Vector((math.inf,) * 3)
+            hi_all = Vector((-math.inf,) * 3)
+            for o in meshes:
+                for v in o.data.vertices:
+                    p = o.matrix_world @ v.co
+                    lo_all = Vector(map(min, lo_all, p))
+                    hi_all = Vector(map(max, hi_all, p))
+            span = hi_all - lo_all
+            for o in meshes:
+                me = o.data
+                attr = me.color_attributes.new("Col", "BYTE_COLOR", "CORNER")
+                normal_m = o.matrix_world.to_3x3()
+                cols = np.empty(len(me.loops) * 4, dtype=np.float32)
+                for poly in me.polygons:
+                    facing = abs((normal_m @ poly.normal).normalized().y)
+                    for li in poly.loop_indices:
+                        p = o.matrix_world @ me.vertices[me.loops[li].vertex_index].co
+                        u = (p.x - lo_all.x) / max(span.x, 1e-6)
+                        t = (p.z - lo_all.z) / max(span.z, 1e-6)
+                        ix = int(np.clip(x0 + u * (x1 - x0), 0, w - 1))
+                        iy = int(np.clip(y0 + t * (y1 - y0), 0, h - 1))
+                        c = px[iy, ix] if mask[iy, ix] else median
+                        k = min(1.0, facing * 1.6)  # edge-on to the camera: trust the median
+                        c = c * k + median * (1 - k)
+                        c = c * 0.75 + median * 0.25  # soften lighting baked into the concept
+                        cols[li * 4 : li * 4 + 3] = c
+                        cols[li * 4 + 3] = 1.0
+                attr.data.foreach_set("color_srgb", cols)  # the image's pixels are sRGB
+                mat = bpy.data.materials.new("Painted")
+                mat.use_nodes = True
+                nodes = mat.node_tree.nodes
+                bsdf = nodes["Principled BSDF"]
+                ca = nodes.new("ShaderNodeVertexColor")
+                ca.layer_name = "Col"
+                mat.node_tree.links.new(ca.outputs["Color"], bsdf.inputs["Base Color"])
+                bsdf.inputs["Roughness"].default_value = 0.6
+                mat.diffuse_color = (*(float(v) ** 2.2 for v in median), 1)
+                me.materials.clear()
+                me.materials.append(mat)
+            painted = True
+    except Exception:
+        traceback.print_exc()
+if imported:
+    for o in meshes:
+        bpy.context.view_layer.objects.active = o
+        o.select_set(True)
+        try:
+            bpy.ops.object.shade_smooth_by_angle(angle=math.radians(40))
+        except Exception:
+            bpy.ops.object.shade_smooth()
+        o.select_set(False)
+
 # 4. Scale to studs, centre, and stand it on the ground.
 def bounds():
     lo = Vector((math.inf,) * 3)
@@ -139,8 +236,9 @@ def bounds():
 
 root = bpy.data.objects.new("BloxyRoot", None)
 scene.collection.objects.link(root)
-for o in meshes:
-    if o.parent is None:
+# Everything top-level goes under the root (imports often wrap meshes in a parent empty).
+for o in list(scene.objects):
+    if o.parent is None and o is not root:
         mw = o.matrix_world.copy()
         o.parent = root
         o.matrix_world = mw
@@ -218,7 +316,7 @@ bpy.ops.export_scene.gltf(filepath=out_glb, export_format="GLB", export_yup=True
 # 6. Preview render: Workbench, material colours, three-quarter view.
 try:
     scene.render.engine = "BLENDER_WORKBENCH"
-    scene.display.shading.color_type = "MATERIAL"
+    scene.display.shading.color_type = "VERTEX" if painted else "MATERIAL"
     scene.display.shading.light = "STUDIO"
     scene.display.shading.show_shadows = True
     scene.render.resolution_x = scene.render.resolution_y = 640
@@ -299,6 +397,7 @@ report(
     dimensions=dims,
     scale=scale,
     materials=sorted({s.material.name for o in meshes for s in o.material_slots if s.material}),
+    painted=painted,
     unpainted=sorted(o.name for o in meshes if not any(s.material for s in o.material_slots)),
     parts=parts[:40],
     floating=floating,

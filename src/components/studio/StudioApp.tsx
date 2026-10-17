@@ -19,6 +19,7 @@ import { useStudioMcp } from "./useStudioMcp";
 import { blenderAvailable, meshStore, runBlender, toBytes, type WorkspaceMesh } from "./blenderMesh";
 import { applyEdit, toStudioProperties, type PartEdit } from "./sceneMath";
 import { useChat, type SculptedMesh } from "./useChat";
+import { usePluginInbox } from "./usePluginInbox";
 import AccountPill from "./AccountPill";
 import ModelPicker from "./ModelPicker";
 import { FREE_DEFAULT, withFreeOnly } from "./freeModels";
@@ -40,7 +41,7 @@ const ExportPanel = dynamic(() => import("./dock/ExportPanel"), { ssr: false });
 const EnvironmentPanel = dynamic(() => import("./dock/EnvironmentPanel"), { ssr: false });
 
 const EASE = "ease-[var(--ease-spring)]";
-const PLUGIN_VERSION = "0.3.0";
+const PLUGIN_VERSION = "0.4.0";
 
 type Tab = "workspace" | "nodes";
 type WorkspacePanel = "explorer" | "properties" | "view" | "environment" | "connect" | null;
@@ -137,6 +138,8 @@ export default function StudioApp() {
     // A mesh the agent sculpted in Blender lands in the local workspace (placeMesh is declared below).
     onMesh: (mesh) => placeMesh(mesh),
   });
+  // Messages typed in the Bloxy plugin inside Roblox Studio run here too.
+  usePluginInbox(sessionId, !!status?.connected, chat.send);
 
   // Before Studio connects, a demo place you can click around and edit locally.
   const [demo, setDemo] = useState<Scene>(loadLocalPlace);
@@ -316,7 +319,7 @@ export default function StudioApp() {
       if (isBaseplate(p)) continue;
       maxX = Math.max(maxX, p.cframe[0] + Math.max(...p.size) / 2);
     }
-    if (!connected) for (const m of meshModels) maxX = Math.max(maxX, m.origin[0] + Math.max(m.dims[0], m.dims[1]) / 2);
+    for (const m of meshModels) maxX = Math.max(maxX, m.origin[0] + Math.max(m.dims[0], m.dims[1]) / 2);
     return maxX === -Infinity ? [0, 0, 0] : [Math.ceil(maxX + 20), 0, 0];
   };
   const uniqueName = (name: string) => {
@@ -420,12 +423,16 @@ export default function StudioApp() {
   };
 
   /** Places a sculpted mesh from the chat; sculpting the same name again replaces it in place. */
-  const placeMesh = (m: SculptedMesh) => {
-    const glb = toBytes(m.glb);
+  const placeMesh = (m: SculptedMesh) => addMesh({ ...m, glb: toBytes(m.glb) });
+
+  /** Adds a mesh (GLB bytes) to the workspace; the same name replaces it in place. */
+  const addMesh = (m: { name: string; glb: Uint8Array; dims: [number, number, number]; tris: number; fit?: number }) => {
+    const glb = m.glb;
     const url = URL.createObjectURL(new Blob([glb as BlobPart], { type: "model/gltf-binary" }));
     const origin = meshModels.find((x) => x.name === m.name)?.origin ?? nextOrigin();
-    void meshStore.put({ name: m.name, glb, origin, dims: m.dims, tris: m.tris });
-    setMeshModels((all) => [...all.filter((x) => x.name !== m.name), { name: m.name, url, origin, dims: m.dims, tris: m.tris }]);
+    const dims: [number, number, number] = m.fit && !m.dims[0] ? [m.fit, m.fit, m.fit] : m.dims;
+    void meshStore.put({ name: m.name, glb, origin, dims, tris: m.tris, fit: m.fit });
+    setMeshModels((all) => [...all.filter((x) => x.name !== m.name), { name: m.name, url, origin, dims, tris: m.tris, fit: m.fit }]);
     focusOn(origin);
   };
 
@@ -503,7 +510,8 @@ export default function StudioApp() {
         {tab === "workspace" ? (
           <Viewport3D
             scene={viewScene}
-            meshes={connected ? [] : meshModels}
+            // Meshes live in Bloxy (download .glb to import them), shown beside the Studio scene too.
+            meshes={meshModels}
             selectedMesh={selectedMesh}
             onSelectMesh={(name) => {
               setSelectedPath(null);
@@ -700,6 +708,8 @@ export default function StudioApp() {
               onSpent={() => void refreshAccount()}
               onNeedsKey={() => setShowSettings(true)}
               onClose={() => setDockPanel(null)}
+              meshModel={settings.meshModel}
+              onAddMesh={(m) => addMesh({ ...m, name: uniqueName(m.name) })}
             />
             </div>
           )}

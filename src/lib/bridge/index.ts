@@ -41,6 +41,10 @@ const misconfigured: Bridge = {
   getChatJob: fail,
   finishChatJob: fail,
   stopChatJob: fail,
+  pluginSession: fail,
+  pushInbox: fail,
+  takeInbox: fail,
+  latestChatJob: fail,
 };
 
 export const bridge: Bridge = pickBridge();

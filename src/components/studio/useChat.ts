@@ -220,6 +220,8 @@ export function useChat({
               (settings.provider === "openrouter" ? settings.openrouterKey : settings.apiKeys[settings.provider]) ||
               undefined,
             messages: history.map(({ role, content }) => ({ role, content })),
+            imageModel: settings.imageModel,
+            meshModel: settings.meshModel,
           }),
         });
         if (!res.ok || !res.body) {

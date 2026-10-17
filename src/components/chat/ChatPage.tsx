@@ -14,6 +14,7 @@ import { buildToParts } from "../studio/nodes/ModelPreview";
 import { MessageView, SettingsDialog } from "../studio/parts";
 import { useAccount } from "../studio/useAccount";
 import { useChat, type SculptedMesh } from "../studio/useChat";
+import { usePluginInbox } from "../studio/usePluginInbox";
 import { useStudioSession } from "../useStudioSession";
 import { useStudioMcp } from "../studio/useStudioMcp";
 import { useSettings } from "../useSettings";
@@ -86,8 +87,9 @@ export default function ChatPage() {
     let maxX = place.reduce((x, p) => Math.max(x, p.cframe[0] + Math.max(...p.size) / 2), -Infinity);
     for (const s of stored) if (s.name !== m.name) maxX = Math.max(maxX, s.origin[0] + Math.max(s.dims[0], s.dims[1]) / 2);
     const origin = stored.find((s) => s.name === m.name)?.origin ?? (maxX === -Infinity ? [0, 0, 0] : [Math.ceil(maxX + 20), 0, 0]);
-    void meshStore.put({ name: m.name, glb, origin, dims: m.dims, tris: m.tris });
-    setStored((all) => [...all.filter((s) => s.name !== m.name), { name: m.name, url, origin, dims: m.dims, tris: m.tris }]);
+    const dims: [number, number, number] = m.fit && !m.dims[0] ? [m.fit, m.fit, m.fit] : m.dims;
+    void meshStore.put({ name: m.name, glb, origin, dims, tris: m.tris, fit: m.fit });
+    setStored((all) => [...all.filter((s) => s.name !== m.name), { name: m.name, url, origin, dims, tris: m.tris, fit: m.fit }]);
     setMeshCards((c) => {
       const next = { ...c, [m.id]: { name: m.name, tris: m.tris } };
       try {
@@ -115,6 +117,8 @@ export default function ChatPage() {
     },
     onMesh: (mesh) => placeMesh(mesh),
   });
+  // Messages typed in the Bloxy plugin inside Roblox Studio run here too.
+  usePluginInbox(sessionId, !!status?.connected, chat.send);
   const [input, setInput] = useState("");
   const scrollRef = useRef<HTMLDivElement>(null);
   const textRef = useRef<HTMLTextAreaElement>(null);
@@ -231,7 +235,7 @@ export default function ChatPage() {
                       </div>
                       <div className="flex items-center justify-between bg-[#111318] px-3 py-2 text-xs text-white/60">
                         <span>
-                          {mesh.name} · sculpted mesh · {mesh.tris.toLocaleString()} triangles
+                          {mesh.name} · 3D mesh{mesh.tris ? ` · ${mesh.tris.toLocaleString()} triangles` : ""}
                         </span>
                         <span className="flex items-center gap-3">
                           <a href={mesh.url} download={`${mesh.name}.glb`} title="In Roblox Studio: File > Import 3D" className="hover:text-white">

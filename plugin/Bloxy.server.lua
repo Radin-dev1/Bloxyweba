@@ -25,7 +25,7 @@ if RunService:IsRunning() and not RunService:IsEdit() then
 end
 
 local DEFAULT_SERVER = "http://localhost:3000"
-local PLUGIN_VERSION = "0.3.0"
+local PLUGIN_VERSION = "0.4.0"
 local MAX_RESULT_CHARS = 200000
 -- The 3D snapshot is sent straight to the website, not to the AI, so it may be bigger.
 local MAX_SCENE_CHARS = 1500000
@@ -880,12 +880,18 @@ end
 local function stopLoop()
 	state.loopId += 1
 	state.connected = false
+	if state.onConnection then
+		state.onConnection(false)
+	end
 end
 
 local function startLoop()
 	stopLoop()
 	local myId = state.loopId
 	state.connected = true
+	if state.onConnection then
+		state.onConnection(true)
+	end
 	setStatus("Connected", Color3.fromRGB(80, 220, 120))
 	if ui then
 		ui.button.Text = "Disconnect"
@@ -964,7 +970,7 @@ toggleButton.ClickableWhenViewportHidden = true
 
 local widget = plugin:CreateDockWidgetPluginGui(
 	"BloxyBridge",
-	DockWidgetPluginGuiInfo.new(Enum.InitialDockState.Right, false, false, 300, 320, 260, 260)
+	DockWidgetPluginGuiInfo.new(Enum.InitialDockState.Right, false, false, 340, 560, 260, 320)
 )
 widget.Title = "Bloxy"
 
@@ -1031,6 +1037,220 @@ ui.log = make("TextLabel", {
 	TextXAlignment = Enum.TextXAlignment.Left, TextYAlignment = Enum.TextYAlignment.Top,
 	TextWrapped = true, ClipsDescendants = true,
 }, root)
+
+--------------------------------------------------------------------------------
+-- Chat: talk to Bloxy from inside Studio. Messages go through the website tab that is
+-- paired with this Studio (it holds the model, key or bits), and replies stream back here.
+--------------------------------------------------------------------------------
+
+local TOOL_WORDS = {
+	build_model = { "Building", "Built" },
+	sculpt_model = { "Sculpting", "Sculpted" },
+	generate_3d_model = { "Generating 3D model", "Generated" },
+	run_luau = { "Running Luau", "Ran Luau" },
+	write_script = { "Writing", "Wrote" },
+	edit_script = { "Editing", "Edited" },
+	read_script = { "Reading", "Read" },
+	create_instance = { "Creating", "Created" },
+	set_properties = { "Editing", "Edited" },
+	delete_instance = { "Deleting", "Deleted" },
+	insert_parts = { "Building", "Built" },
+	get_studio_state = { "Checking Studio", "Checked Studio" },
+	search_instances = { "Searching", "Searched" },
+	grep_scripts = { "Searching code", "Searched code" },
+}
+
+local chat = { jobId = nil, afterSeq = -1, loopId = 0, bubble = nil, tools = {}, order = 0, waiting = false }
+
+ui.chat = make("Frame", {
+	LayoutOrder = 8, Size = UDim2.new(1, 0, 1, -76), BackgroundTransparency = 1, Visible = false,
+}, root)
+ui.messages = make("ScrollingFrame", {
+	Size = UDim2.new(1, 0, 1, -46), BackgroundColor3 = Color3.fromRGB(18, 18, 22), BorderSizePixel = 0,
+	ScrollBarThickness = 4, CanvasSize = UDim2.new(), AutomaticCanvasSize = Enum.AutomaticSize.Y,
+	ScrollingDirection = Enum.ScrollingDirection.Y,
+}, ui.chat)
+make("UICorner", { CornerRadius = UDim.new(0, 8) }, ui.messages)
+make("UIPadding", {
+	PaddingTop = UDim.new(0, 8), PaddingBottom = UDim.new(0, 8),
+	PaddingLeft = UDim.new(0, 8), PaddingRight = UDim.new(0, 8),
+}, ui.messages)
+make("UIListLayout", { Padding = UDim.new(0, 6), SortOrder = Enum.SortOrder.LayoutOrder }, ui.messages)
+ui.input = make("TextBox", {
+	PlaceholderText = "Ask Bloxy to build or script…", Text = "", Position = UDim2.new(0, 0, 1, -38),
+	Size = UDim2.new(1, -64, 0, 38), BackgroundColor3 = FIELD, TextColor3 = TEXT,
+	PlaceholderColor3 = Color3.fromRGB(110, 110, 120), Font = Enum.Font.Gotham, TextSize = 14,
+	ClearTextOnFocus = false, BorderSizePixel = 0, TextXAlignment = Enum.TextXAlignment.Left, TextWrapped = true,
+}, ui.chat)
+make("UICorner", { CornerRadius = UDim.new(0, 8) }, ui.input)
+make("UIPadding", { PaddingLeft = UDim.new(0, 8), PaddingRight = UDim.new(0, 8) }, ui.input)
+ui.send = make("TextButton", {
+	Text = "Send", Position = UDim2.new(1, -58, 1, -38), Size = UDim2.new(0, 58, 0, 38),
+	BackgroundColor3 = ACCENT, TextColor3 = Color3.new(1, 1, 1), Font = Enum.Font.GothamBold, TextSize = 14,
+	BorderSizePixel = 0,
+}, ui.chat)
+make("UICorner", { CornerRadius = UDim.new(0, 8) }, ui.send)
+
+local function nextOrder()
+	chat.order += 1
+	return chat.order
+end
+
+local function scrollDown()
+	task.defer(function()
+		ui.messages.CanvasPosition = Vector2.new(0, math.max(0, ui.messages.AbsoluteCanvasSize.Y))
+	end)
+end
+
+local function addLine(text, kind)
+	local isUser = kind == "user"
+	local holder = make("Frame", {
+		LayoutOrder = nextOrder(), Size = UDim2.new(1, 0, 0, 0), AutomaticSize = Enum.AutomaticSize.Y,
+		BackgroundTransparency = 1,
+	}, ui.messages)
+	local lbl = make("TextLabel", {
+		Text = text, Size = UDim2.new(isUser and 0.85 or 1, 0, 0, 0), AutomaticSize = Enum.AutomaticSize.Y,
+		Position = UDim2.fromScale(isUser and 0.15 or 0, 0),
+		BackgroundColor3 = isUser and ACCENT or Color3.fromRGB(32, 32, 40),
+		BackgroundTransparency = (kind == "tool" or kind == "note") and 1 or 0,
+		TextColor3 = kind == "tool" and Color3.fromRGB(140, 150, 175)
+			or kind == "error" and Color3.fromRGB(255, 120, 120)
+			or kind == "note" and Color3.fromRGB(150, 150, 160)
+			or TEXT,
+		Font = kind == "tool" and Enum.Font.GothamMedium or Enum.Font.Gotham, TextSize = kind == "tool" and 12 or 13,
+		TextWrapped = true, TextXAlignment = Enum.TextXAlignment.Left, TextYAlignment = Enum.TextYAlignment.Top,
+		BorderSizePixel = 0,
+	}, holder)
+	make("UICorner", { CornerRadius = UDim.new(0, 8) }, lbl)
+	if kind ~= "tool" and kind ~= "note" then
+		make("UIPadding", {
+			PaddingTop = UDim.new(0, 6), PaddingBottom = UDim.new(0, 6),
+			PaddingLeft = UDim.new(0, 8), PaddingRight = UDim.new(0, 8),
+		}, lbl)
+	end
+	scrollDown()
+	return lbl
+end
+
+local function toolText(name, target, status)
+	local words = TOOL_WORDS[name] or { name, name }
+	local suffix = (target and target ~= "") and (" " .. target) or ""
+	if status == "running" then
+		return "⋯ " .. words[1] .. suffix
+	end
+	return (status and "✓ " or "✗ ") .. words[2] .. suffix
+end
+
+local function applyEvent(event)
+	local t = event.type
+	if t == "user" then
+		chat.bubble = nil
+		chat.waiting = false
+		addLine(tostring(event.content or ""), "user")
+	elseif t == "text" then
+		if not chat.bubble then
+			chat.bubble = addLine("", "assistant")
+		end
+		chat.bubble.Text = (chat.bubble.Text .. tostring(event.delta or "")):gsub("^%s+", "")
+		scrollDown()
+	elseif t == "tool_call" then
+		chat.bubble = nil
+		chat.tools[event.id] = { line = addLine(toolText(event.name, event.target, "running"), "tool"), name = event.name, target = event.target }
+	elseif t == "tool_result" then
+		local tool = chat.tools[event.id]
+		if tool then
+			tool.line.Text = toolText(tool.name, tool.target, event.ok == true)
+		end
+	elseif t == "mesh" or t == "build" then
+		addLine("Placed " .. tostring(event.name or "a model") .. " in your Bloxy workspace (download the .glb there to import it).", "note")
+	elseif t == "error" then
+		chat.bubble = nil
+		addLine(tostring(event.message or "Something went wrong."), "error")
+	end
+end
+
+local function stopChat()
+	chat.loopId += 1
+	ui.chat.Visible = false
+end
+
+local function startChat()
+	stopChat()
+	local myId = chat.loopId
+	ui.chat.Visible = true
+	task.spawn(function()
+		while chat.loopId == myId do
+			local route = "/api/plugin/chat?afterSeq=" .. tostring(chat.afterSeq)
+			if chat.jobId then
+				route ..= "&jobId=" .. HttpService:UrlEncode(chat.jobId)
+			end
+			local res, data = request("GET", route)
+			if chat.loopId ~= myId then
+				break
+			end
+			if res and res.Success and typeof(data) == "table" and data.jobId then
+				if data.jobId ~= chat.jobId then
+					chat.jobId = data.jobId
+					chat.afterSeq = -1
+				end
+				for _, entry in ipairs(data.events or {}) do
+					if entry.seq > chat.afterSeq then
+						chat.afterSeq = entry.seq
+						applyEvent(entry.event)
+					end
+				end
+			end
+			task.wait(1)
+		end
+	end)
+end
+
+local function sendChat()
+	local text = ui.input.Text:gsub("^%s+", ""):gsub("%s+$", "")
+	if text == "" or not state.connected then
+		return
+	end
+	ui.input.Text = ""
+	local res = request("POST", "/api/plugin/chat", { text = text })
+	if not res or not res.Success then
+		addLine("Couldn't send. Is the Bloxy website still running?", "error")
+		return
+	end
+	chat.waiting = true
+	local sentAt = os.clock()
+	task.delay(8, function()
+		if chat.waiting and os.clock() - sentAt >= 7.5 then
+			addLine("Waiting for the Bloxy tab… keep bloxy open in your browser (Studio or Chat page) to run messages.", "note")
+		end
+	end)
+end
+
+ui.send.MouseButton1Click:Connect(sendChat)
+ui.input.FocusLost:Connect(function(enterPressed)
+	if enterPressed then
+		sendChat()
+	end
+end)
+
+-- Paired: the pairing fields give their space to the chat.
+local pairingRows = { ui.server, ui.code, ui.log }
+for _, child in ipairs(root:GetChildren()) do
+	if child:IsA("TextLabel") and (child.LayoutOrder == 1 or child.LayoutOrder == 3) then
+		table.insert(pairingRows, child)
+	end
+end
+local function showChat(on)
+	for _, row in ipairs(pairingRows) do
+		row.Visible = not on
+	end
+	if on then
+		startChat()
+	else
+		stopChat()
+	end
+end
+
+state.onConnection = showChat
 
 ui.button.MouseButton1Click:Connect(function()
 	if state.connected then

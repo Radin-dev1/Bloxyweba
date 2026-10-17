@@ -76,21 +76,43 @@ let queue: Promise<unknown> = Promise.resolve(); // one Blender at a time
 
 export function runBlenderScript(
   script: string,
-  options: { maxTris?: number; targetStuds?: number; timeoutMs?: number; signal?: AbortSignal; sheet?: boolean } = {},
+  options: RunOptions = {},
 ): Promise<BlenderResult> {
-  const job = queue.then(() => runNow(script, options));
+  const job = queue.then(() => runNow({ script }, options));
   queue = job.catch(() => undefined);
   return job;
 }
 
+/**
+ * Cleans up a mesh from an AI 3D model (or a library): weld, cut to the triangle budget, scale
+ * to studs, set on the ground, and paint it from `concept` when it came back without colour.
+ */
+export function runBlenderMesh(glb: Buffer, options: RunOptions & { concept?: Buffer } = {}): Promise<BlenderResult> {
+  const job = queue.then(() => runNow({ glb, concept: options.concept }, options));
+  queue = job.catch(() => undefined);
+  return job;
+}
+
+type RunOptions = { maxTris?: number; targetStuds?: number; timeoutMs?: number; signal?: AbortSignal; sheet?: boolean };
+
+/** Blender gets a minimal environment: AI-written scripts may read os.environ, so no secrets. */
+function blenderEnv(extra: Record<string, string>) {
+  const keep = ["SystemRoot", "SYSTEMROOT", "windir", "PATH", "Path", "TEMP", "TMP", "TMPDIR", "HOME", "USERPROFILE", "APPDATA", "LOCALAPPDATA", "LANG"];
+  const env: Record<string, string> = {};
+  for (const k of keep) if (process.env[k]) env[k] = process.env[k]!;
+  return { ...env, ...extra };
+}
+
 async function runNow(
-  script: string,
-  { maxTris = 10000, targetStuds = 0, timeoutMs = 120_000, signal, sheet = false }: { maxTris?: number; targetStuds?: number; timeoutMs?: number; signal?: AbortSignal; sheet?: boolean },
+  input: { script: string } | { glb: Buffer; concept?: Buffer },
+  { maxTris = 10000, targetStuds = 0, timeoutMs = 120_000, signal, sheet = false }: RunOptions,
 ): Promise<BlenderResult> {
   const status = blenderStatus();
   if (!status.available || !status.exe) return { ok: false, error: status.reason ?? "Blender is not available." };
-  const unsafe = checkScript(script);
-  if (unsafe) return { ok: false, error: unsafe };
+  if ("script" in input) {
+    const unsafe = checkScript(input.script);
+    if (unsafe) return { ok: false, error: unsafe };
+  }
 
   // Loaded at runtime so the bundler doesn't trace these runtime paths (it would otherwise
   // pack the whole project into this server function).
@@ -103,13 +125,28 @@ async function runNow(
     png: path.join(dir, "preview.png"),
     report: path.join(dir, "report.json"),
     sheet: path.join(dir, "sheet.jpg"),
+    input: path.join(dir, "input.glb"),
+    concept: path.join(dir, "concept"),
   };
   try {
-    await writeFile(files.script, script, "utf8");
+    if ("script" in input) await writeFile(files.script, input.script, "utf8");
+    else {
+      await writeFile(files.input, input.glb);
+      // Blender picks the image reader from the extension, so name it by its real type.
+      if (input.concept) {
+        const b = input.concept;
+        const ext = b.subarray(8, 12).toString("latin1") === "WEBP" ? ".webp" : b[0] === 0xff && b[1] === 0xd8 ? ".jpg" : ".png";
+        files.concept += ext;
+        await writeFile(files.concept, b);
+      }
+    }
+    const source = "script" in input ? files.script : files.input;
+    const extraEnv: Record<string, string> = { SEED: "0" };
+    if (!("script" in input) && input.concept) extraEnv.BLOXY_CONCEPT = files.concept;
     const runner = path.join(process.cwd(), "blender", "bloxy_runner.py");
-    const args = ["--background", "--factory-startup", "--python", runner, "--", files.script, files.glb, files.png, files.report, String(maxTris), String(targetStuds), ...(sheet ? [files.sheet] : [])];
+    const args = ["--background", "--factory-startup", "--python", runner, "--", source, files.glb, files.png, files.report, String(maxTris), String(targetStuds), ...(sheet ? [files.sheet] : [])];
     const log = await new Promise<string>((resolve, reject) => {
-      const child = spawn(status.exe!, args, { cwd: dir, windowsHide: true, env: { ...process.env, SEED: "0" } });
+      const child = spawn(status.exe!, args, { cwd: dir, windowsHide: true, env: blenderEnv(extraEnv) as NodeJS.ProcessEnv });
       let out = "";
       child.stdout.on("data", (d) => (out = (out + d).slice(-20_000)));
       child.stderr.on("data", (d) => (out = (out + d).slice(-20_000)));

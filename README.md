@@ -79,6 +79,7 @@ Bloxy can run on **your** OpenRouter key while users pay with **bits**:
 | `BITS_DAILY` | Free bits per day (default 300). |
 | `BITS_PER_USD` | Bits per $1 of real cost (default 1000). |
 | `ADMIN_ROBLOX_IDS` | Comma-separated Roblox user IDs that can grant bits. |
+| `HF_TOKEN` | Your Hugging Face token (huggingface.co/settings/tokens, a **read** token is enough). Powers the open-source 3D and image models for everyone using your Bloxy and raises the free GPU quota. Without it, a few anonymous runs a day still work. |
 
 In the Roblox OAuth app, add these redirect URLs: `https://<your-domain>/api/auth/roblox/callback` and `http://localhost:3000/api/auth/roblox/callback`. Balances live in the same Upstash Redis as the bridge (in memory locally).
 
@@ -111,6 +112,8 @@ The plugin's website URL must use HTTPS in production. Studio asks the user once
   - **Video**: OpenRouter's async Videos API (default `google/veo-3.1-fast`), polled until done.
   - Models are free-text fields with suggestions from OpenRouter's live model lists.
 - **Chat dock**: the prompt bar floats over the workspace, and the conversation shows live tool calls.
+- **Chat inside Roblox Studio**: once the plugin (0.4.0) is paired, its panel becomes a chat. Messages run through your open Bloxy tab (your model, key or bits) and the reply streams back into Studio.
+- **Open-source 3D models** (Hugging Face, picked in Settings): an image model (FLUX.1 schnell, Qwen-Image 2512, HiDream-O1) draws a concept and a 3D model (Hunyuan3D 2.1, TRELLIS.2, Stable Fast 3D, UniForge3D, Hunyuan3D 2) builds the mesh. If one is busy the next is tried. With Blender installed the mesh is welded, painted from the concept, cut to 10,000 triangles and scaled to studs. Use it from chat (`generate_3d_model`) or Idea Forge (**AI mesh**). Meshes stay in the Bloxy workspace: select one and press **Download .glb**, then File > Import 3D in Studio.
 
 ### Matching Roblox Studio's look
 

@@ -3,6 +3,7 @@
 import { useCallback, useState } from "react";
 import { PROVIDERS } from "@/lib/agent/providers";
 import type { ProviderId } from "@/lib/agent/types";
+import { DEFAULT_IMAGE_MODEL, DEFAULT_MESH_MODEL, IMAGE_MODELS, MESH_MODELS, type ImageModelId, type MeshModelId } from "@/lib/hfModels";
 
 export type Settings = {
   provider: ProviderId;
@@ -12,6 +13,9 @@ export type Settings = {
   openrouterKey: string;
   /** Only show and use OpenRouter's free models. */
   freeOnly: boolean;
+  /** Open-source models (Hugging Face) for AI 3D generation: concept image, then mesh. */
+  imageModel: ImageModelId;
+  meshModel: MeshModelId;
 };
 
 const KEY = "bloxy.settings";
@@ -27,6 +31,8 @@ const DEFAULTS: Settings = {
   apiKeys: { openrouter: "", claude: "", gemini: "" },
   openrouterKey: "",
   freeOnly: false,
+  imageModel: DEFAULT_IMAGE_MODEL,
+  meshModel: DEFAULT_MESH_MODEL,
 };
 
 function load(): Settings {
@@ -40,6 +46,8 @@ function load(): Settings {
       apiKeys: { ...DEFAULTS.apiKeys, ...saved.apiKeys },
       openrouterKey: typeof saved.openrouterKey === "string" ? saved.openrouterKey : "",
       freeOnly: saved.freeOnly === true,
+      imageModel: IMAGE_MODELS.some((m) => m.id === saved.imageModel) ? saved.imageModel! : DEFAULT_IMAGE_MODEL,
+      meshModel: MESH_MODELS.some((m) => m.id === saved.meshModel) ? saved.meshModel! : DEFAULT_MESH_MODEL,
     };
   } catch {
     return DEFAULTS;

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { PROVIDERS } from "@/lib/agent/providers";
 import type { StudioStatus } from "../useStudioSession";
 import type { Settings } from "../useSettings";
@@ -12,6 +12,7 @@ import {
   Download,
 } from "../landing/icons";
 import FreeToggle from "./FreeToggle";
+import { IMAGE_MODELS, MESH_MODELS } from "@/lib/hfModels";
 import { withFreeOnly } from "./freeModels";
 import ModelBrowser from "./ModelBrowser";
 import ProviderLogo from "./ProviderLogo";
@@ -257,16 +258,38 @@ const TOOL_LABELS: Record<string, string> = {
   set_selection: "Selected",
   build_model: "Built",
   sculpt_model: "Sculpted",
+  generate_3d_model: "Generated",
+};
+
+/** What a failed tool was trying to do. */
+const FAILED_LABELS: Record<string, string> = {
+  build_model: "Build failed",
+  sculpt_model: "Sculpt failed",
+  generate_3d_model: "3D generation failed",
 };
 
 /** What a running tool is doing, in words (Blender can take a few seconds). */
 const RUNNING_LABELS: Record<string, string> = {
   build_model: "Building",
   sculpt_model: "Sculpting in Blender",
+  generate_3d_model: "Generating 3D model",
 };
+
+/** Seconds since a running tool started (long jobs like 3D generation show a live timer). */
+function useElapsed(running: boolean) {
+  const [start] = useState(() => Date.now());
+  const [now, setNow] = useState(start);
+  useEffect(() => {
+    if (!running) return;
+    const t = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(t);
+  }, [running]);
+  return Math.round((now - start) / 1000);
+}
 
 export function ToolChip({ tool }: { tool: ToolCall }) {
   const [open, setOpen] = useState(false);
+  const elapsed = useElapsed(tool.status === "running");
   const args = tool.args as Record<string, unknown>;
   const target = (args?.path ??
     args?.parent ??
@@ -297,8 +320,12 @@ export function ToolChip({ tool }: { tool: ToolCall }) {
           </span>
         )}
         <span className="font-medium">
-          {(tool.status === "running" && RUNNING_LABELS[tool.name]) || TOOL_LABELS[tool.name] || tool.name}
+          {(tool.status === "running" && RUNNING_LABELS[tool.name]) ||
+            (tool.status === "error" && (FAILED_LABELS[tool.name] ?? `${TOOL_LABELS[tool.name] ?? tool.name} failed`)) ||
+            TOOL_LABELS[tool.name] ||
+            tool.name}
         </span>
+        {tool.status === "running" && elapsed >= 3 && <span className="tabular-nums text-white/40">{elapsed}s</span>}
         {target && (
           <span className="truncate font-mono text-white/35">
             {String(target)}
@@ -440,6 +467,37 @@ export function SettingsDialog({
             <p className="mt-1 px-1 text-xs leading-relaxed text-white/40">
               Only OpenRouter&apos;s free models. They cost no bits, but they&apos;re slower and rate-limited.
             </p>
+          </div>
+
+          <div className="mt-3 rounded-xl border border-white/[0.07] px-3 py-3">
+            <p className="text-sm font-medium text-white/85">Open-source 3D generation</p>
+            <p className="mt-0.5 text-xs leading-relaxed text-white/40">
+              When Bloxy makes a detailed 3D model, an image model draws the concept and a 3D model builds the mesh. Free, on Hugging Face.
+            </p>
+            <label className="mt-3 block text-[11px] font-medium tracking-wide text-white/45 uppercase">3D model</label>
+            <select
+              value={draft.meshModel}
+              onChange={(e) => setDraft({ ...draft, meshModel: e.target.value as Settings["meshModel"] })}
+              className="mt-1 w-full rounded-lg border border-white/10 bg-[#0d0f14] px-2.5 py-2 text-sm text-white outline-none focus:border-blox/50"
+            >
+              {MESH_MODELS.map((m) => (
+                <option key={m.id} value={m.id}>
+                  {m.label} · {m.note}
+                </option>
+              ))}
+            </select>
+            <label className="mt-3 block text-[11px] font-medium tracking-wide text-white/45 uppercase">Concept image model</label>
+            <select
+              value={draft.imageModel}
+              onChange={(e) => setDraft({ ...draft, imageModel: e.target.value as Settings["imageModel"] })}
+              className="mt-1 w-full rounded-lg border border-white/10 bg-[#0d0f14] px-2.5 py-2 text-sm text-white outline-none focus:border-blox/50"
+            >
+              {IMAGE_MODELS.map((m) => (
+                <option key={m.id} value={m.id}>
+                  {m.label} · {m.note}
+                </option>
+              ))}
+            </select>
           </div>
 
           <p className="mt-4 rounded-xl border border-blox/20 bg-blox/[0.07] px-3.5 py-3 text-xs leading-relaxed text-white/60">

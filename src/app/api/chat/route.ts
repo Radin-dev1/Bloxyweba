@@ -6,18 +6,22 @@ import {
   makeStudioExecutor,
   OFFLINE_SYSTEM_PROMPT,
   OFFLINE_TOOLS,
+  GENERATE_3D_NOTE,
+  GENERATE_3D_TOOL,
   SCULPT_NOTE,
   SCULPT_TOOL,
   sculptAvailable,
   PROVIDERS,
   runAgent,
   type AgentEvent,
+  type ToolExecutor,
   type StepBilling,
 } from "@/lib/agent";
 import { BIT_ESTIMATES, refund, reserve, resolveBilling, settle } from "@/lib/bits";
 import { pickSkills, skillBlock } from "@/lib/skills";
 import { MCP_SYSTEM_PROMPT, makeMcpExecutor, mcpStudio, mcpTools } from "@/lib/studioMcp";
-import { SYSTEM_PROMPT } from "@/lib/tools";
+import { SYSTEM_PROMPT, TOOL_SPECS } from "@/lib/tools";
+import type { Generate3DOptions } from "@/lib/agent/generate3d";
 
 // Vercel Hobby allows at most 300s per function; long agent runs continue in the next message.
 export const maxDuration = 300;
@@ -33,6 +37,9 @@ const Body = z.object({
     .array(z.object({ role: z.enum(["user", "assistant"]), content: z.string().max(200_000) }))
     .min(1)
     .max(200),
+  // Open-source models for generate_3d_model (Hugging Face), picked in Settings.
+  imageModel: z.enum(["flux-schnell", "qwen-image-2512", "hidream-o1"]).optional(),
+  meshModel: z.enum(["hunyuan3d-2.1", "trellis-2", "stable-fast-3d", "uniforge3d", "hunyuan3d-2"]).optional(),
 });
 
 /**
@@ -43,7 +50,8 @@ const Body = z.object({
 export async function POST(request: Request) {
   const parsed = Body.safeParse(await request.json().catch(() => null));
   if (!parsed.success) return Response.json({ error: "bad_request" }, { status: 400 });
-  const { sessionId, provider, model, messages } = parsed.data;
+  const { sessionId, provider, model, messages, imageModel, meshModel } = parsed.data;
+  const gen = { imageModel, meshModel };
   const jobId = parsed.data.jobId ?? token(18);
 
   let apiKey: string;
@@ -94,7 +102,7 @@ export async function POST(request: Request) {
   const canSculpt = !studioConnected && sculptAvailable();
   const skills = skillBlock(pickSkills(history.at(-1)?.content ?? "").filter((id) => id !== "sculpting" || canSculpt));
   const jobCreated = sessionId ? await bridge.createChatJob(sessionId, jobId).catch(() => false) : false;
-  if (!sessionId || !jobCreated) return streamReply(request, { provider, model, apiKey, history, billing, skills, mcp });
+  if (!sessionId || !jobCreated) return streamReply(request, { provider, model, apiKey, history, billing, skills, mcp, gen });
 
   const controller = new AbortController();
   let writes = Promise.resolve();
@@ -121,7 +129,7 @@ export async function POST(request: Request) {
         history,
         emit,
         signal: controller.signal,
-        ...(await agentSetup(studioConnected ? sessionId : undefined, mcp, skills, emit)),
+        ...(await agentSetup(studioConnected ? sessionId : undefined, mcp, skills, emit, gen)),
         billing,
       });
       await writes;
@@ -173,6 +181,10 @@ export async function DELETE(request: Request) {
   return Response.json({ stopped });
 }
 
+const MESH_NOTE = `
+
+Meshes: generate_3d_model (open-source AI 3D models) and, when listed, sculpt_model (Blender) make real meshes for detailed or organic objects (characters, creatures, food, statues). They land in the user's Bloxy workspace, not in Studio: tell the user to select the mesh there, press Download .glb and import it in Studio with File > Import 3D. For blocky things, build with Studio parts directly.`;
+
 /** Text after a tool step starts a new paragraph, so replies from separate steps don't run together. */
 function paragraphs() {
   let spoke = false;
@@ -195,6 +207,7 @@ type StreamRun = {
   billing?: StepBilling;
   skills: string;
   mcp: { id: string; name: string } | null;
+  gen: Generate3DOptions;
 };
 
 /**
@@ -206,13 +219,27 @@ async function agentSetup(
   mcp: { id: string; name: string } | null,
   skills: string,
   emit: (e: AgentEvent) => void,
+  gen: Generate3DOptions = {},
 ) {
-  if (pluginSession) return { executeTool: makeStudioExecutor(pluginSession, emit), system: SYSTEM_PROMPT + skills };
+  if (pluginSession) {
+    // Studio tools go to the plugin; making meshes (AI 3D models, Blender sculpts) happens here
+    // and the result lands in the Bloxy workspace, ready to download and import.
+    const studio = makeStudioExecutor(pluginSession, emit);
+    const meshes = makeOfflineExecutor(emit, gen);
+    const sculpt = sculptAvailable();
+    const executeTool: ToolExecutor = (id, name, input, signal) =>
+      name === "generate_3d_model" || name === "sculpt_model" ? meshes(id, name, input, signal) : studio(id, name, input, signal);
+    return {
+      executeTool,
+      tools: [...TOOL_SPECS, GENERATE_3D_TOOL, ...(sculpt ? [SCULPT_TOOL] : [])],
+      system: SYSTEM_PROMPT + MESH_NOTE + skills,
+    };
+  }
   if (mcp) {
     try {
       return {
-        executeTool: makeMcpExecutor(mcp.id, emit),
-        tools: [...(await mcpTools(OFFLINE_TOOLS[0].parameters)), ...(sculptAvailable() ? [SCULPT_TOOL] : [])],
+        executeTool: makeMcpExecutor(mcp.id, emit, gen),
+        tools: [...(await mcpTools(OFFLINE_TOOLS[0].parameters)), GENERATE_3D_TOOL, ...(sculptAvailable() ? [SCULPT_TOOL] : [])],
         system: MCP_SYSTEM_PROMPT + skills,
       };
     } catch {
@@ -222,9 +249,9 @@ async function agentSetup(
   // With Blender on this machine the agent can also sculpt organic meshes.
   const sculpt = sculptAvailable();
   return {
-    executeTool: makeOfflineExecutor(emit),
-    tools: sculpt ? [...OFFLINE_TOOLS, SCULPT_TOOL] : OFFLINE_TOOLS,
-    system: OFFLINE_SYSTEM_PROMPT + (sculpt ? SCULPT_NOTE : "") + skills,
+    executeTool: makeOfflineExecutor(emit, gen),
+    tools: [...OFFLINE_TOOLS, GENERATE_3D_TOOL, ...(sculpt ? [SCULPT_TOOL] : [])],
+    system: OFFLINE_SYSTEM_PROMPT + (sculpt ? SCULPT_NOTE : "") + GENERATE_3D_NOTE + skills,
   };
 }
 
@@ -239,12 +266,12 @@ function streamReply(request: Request, run: StreamRun) {
         if (!closed) controller.enqueue(encoder.encode(JSON.stringify(tidy(raw)) + "\n"));
       };
       try {
-        const { skills, mcp, ...agent } = run;
+        const { skills, mcp, gen, ...agent } = run;
         await runAgent(run.provider, {
           ...agent,
           emit,
           signal: request.signal,
-          ...(await agentSetup(undefined, mcp, skills, emit)),
+          ...(await agentSetup(undefined, mcp, skills, emit, gen)),
         });
       } catch (err) {
         if (!request.signal.aborted) emit({ type: "error", message: describeError(err) });

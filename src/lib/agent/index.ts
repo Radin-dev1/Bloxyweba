@@ -9,6 +9,7 @@ export * from "./types";
 export { PROVIDERS } from "./providers";
 export { OFFLINE_SYSTEM_PROMPT, OFFLINE_TOOLS, makeOfflineExecutor } from "./offline";
 export { SCULPT_NOTE, SCULPT_TOOL, sculptAvailable } from "./sculpt";
+export { GENERATE_3D_NOTE, GENERATE_3D_TOOL } from "./generate3d";
 
 const MAX_TOOL_RESULT_CHARS = 60_000;
 

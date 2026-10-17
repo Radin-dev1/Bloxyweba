@@ -2,6 +2,7 @@ import { z } from "zod";
 import { checkBuild, groundBuild, normalizeShapes } from "@/lib/buildCheck";
 import { Build } from "@/lib/openrouter";
 import { SYSTEM_PROMPT } from "@/lib/tools";
+import { runGenerate3D, type Generate3DOptions } from "./generate3d";
 import { runSculpt } from "./sculpt";
 import type { AgentEvent, AgentToolSpec, ToolExecutor } from "./types";
 
@@ -38,8 +39,13 @@ You can still:
 Mention once, briefly, that connecting the Bloxy Studio plugin lets you build directly in their place.`;
 
 /** Runs build_model by sending the build to the browser; every other tool explains Studio isn't connected. */
-export function makeOfflineExecutor(emit: (e: AgentEvent) => void): ToolExecutor {
+export function makeOfflineExecutor(emit: (e: AgentEvent) => void, gen: Generate3DOptions = {}): ToolExecutor {
   return async (callId, name, input, signal) => {
+    if (name === "generate_3d_model") {
+      const r = await runGenerate3D(callId, input, emit, gen, signal);
+      emit({ type: "tool_result", id: callId, ok: r.ok, preview: r.content.slice(0, 2000) });
+      return r;
+    }
     if (name === "sculpt_model") {
       const r = await runSculpt(callId, input, emit, signal);
       emit({ type: "tool_result", id: callId, ok: r.ok, preview: r.content.slice(0, 2000) });

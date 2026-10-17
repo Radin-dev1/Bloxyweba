@@ -17,9 +17,31 @@ const RANDOM: { key: keyof typeof IDEAS; label: string }[] = [
 ];
 
 import type { Generate3D } from "../model3dStream";
-import { blenderAvailable, type BlenderMesh } from "../blenderMesh";
+import { blenderAvailable, toBytes, type BlenderMesh } from "../blenderMesh";
+import { MESH_MODELS } from "@/lib/hfModels";
 
-type Idea = { id: string; prompt: string; image: string; build?: BuildT; inserted?: string; mesh?: BlenderMesh };
+/** aiModel: the open-source 3D model that made this mesh (AI mesh mode). */
+type Idea = { id: string; prompt: string; image: string; build?: BuildT; inserted?: string; mesh?: BlenderMesh; aiModel?: string };
+
+/** A short model name from the idea's words ("a cute red dragon" -> "CuteRedDragon"). */
+function nameFrom(prompt: string) {
+  const words = prompt.replace(/[^a-z0-9 ]/gi, " ").split(/\s+/).filter((w) => w.length > 2 && !/^(the|and|with|for|of)$/i.test(w));
+  return words.slice(0, 3).map((w) => w[0].toUpperCase() + w.slice(1).toLowerCase()).join("") || "Model";
+}
+
+/** The concept image as a data URL (generated images may be remote URLs). */
+async function asDataUrl(src: string) {
+  if (src.startsWith("data:")) return src;
+  const blob = await (await fetch(src)).blob();
+  return new Promise<string>((resolve, reject) => {
+    const r = new FileReader();
+    r.onload = () => resolve(String(r.result));
+    r.onerror = () => reject(r.error);
+    r.readAsDataURL(blob);
+  });
+}
+
+export type ForgeMesh = { name: string; glb: Uint8Array; dims: [number, number, number]; tris: number; fit?: number };
 
 export default function IdeaForge({
   generate3D,
@@ -30,6 +52,8 @@ export default function IdeaForge({
   onSpent,
   onNeedsKey,
   onClose,
+  meshModel,
+  onAddMesh,
 }: {
   /** Streams the model and builds it live in the workspace (adds it there when done). */
   generate3D?: Generate3D;
@@ -41,6 +65,10 @@ export default function IdeaForge({
   onSpent: () => void;
   onNeedsKey: () => void;
   onClose: () => void;
+  /** Open-source 3D model (Settings) used by "AI mesh". */
+  meshModel?: string;
+  /** Puts an AI mesh into the workspace. */
+  onAddMesh?: (mesh: ForgeMesh) => void;
 }) {
   const [prompt, setPrompt] = useState("");
   const [style, setStyle] = useState<(typeof STYLES)[number]>("Roblox");
@@ -62,6 +90,8 @@ export default function IdeaForge({
       alive = false;
     };
   }, []);
+  // "AI mesh": open-source 3D AI (Hunyuan3D, TRELLIS...) turns the concept image into a mesh.
+  const [aiMesh, setAiMesh] = useState(false);
   const [cleanBg, setCleanBg] = useState(true);
   const [doodling, setDoodling] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
@@ -117,10 +147,43 @@ export default function IdeaForge({
     }
   };
 
+  const makeAiMesh = async () => {
+    if (!current) return;
+    setView("3d");
+    const res = await fetch("/api/gen/hf3d", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ image: await asDataUrl(current.image), prompt: current.prompt, sizeStuds: 6, ...(meshModel ? { meshModel } : {}) }),
+    });
+    const data = (await res.json().catch(() => ({}))) as { glb?: string; dims?: [number, number, number]; tris?: number; fit?: number; meshModel?: string; error?: string };
+    if (!res.ok || !data.glb) throw new Error(data.error ?? `3D generation failed (${res.status})`);
+    const glb = toBytes(data.glb);
+    const name = nameFrom(current.prompt === "Uploaded reference" ? "Model" : current.prompt);
+    const mesh: BlenderMesh = {
+      url: URL.createObjectURL(new Blob([glb as BlobPart], { type: "model/gltf-binary" })),
+      preview: null,
+      tris: data.tris ?? 0,
+      dims: data.dims ?? [0, 0, 0],
+    };
+    onAddMesh?.({ name, glb, dims: mesh.dims, tris: mesh.tris, fit: data.fit });
+    const label = MESH_MODELS.find((m) => m.id === data.meshModel)?.label ?? "AI";
+    update({ ...current, build: { name, parts: [] }, mesh, aiModel: label, inserted: `Workspace.${name}` });
+  };
+
   const make3d = async () => {
     if (!current || busy) return;
     setError(null);
     setBusy("3d");
+    if (aiMesh) {
+      try {
+        await makeAiMesh();
+      } catch (err) {
+        fail(err);
+      } finally {
+        setBusy(null);
+      }
+      return;
+    }
     const body = {
       apiKey: openrouterKey,
       prompt: current.prompt === "Uploaded reference" ? "the object in the image" : current.prompt,
@@ -259,7 +322,9 @@ export default function IdeaForge({
                 <div className="grid h-full place-items-center bg-[#eef2f8]">
                   <div className="text-center">
                     <span className="mx-auto block size-8 animate-spin rounded-full border-2 border-blox/30 border-t-blox" />
-                    <p className="mt-3 text-sm text-black/55">{busy === "3d" ? "Building it out of Roblox parts…" : "Forging your idea…"}</p>
+                    <p className="mt-3 text-sm text-black/55">
+                      {busy === "3d" ? (aiMesh ? "Open-source 3D AI is building the mesh (20-90s)…" : "Building it out of Roblox parts…") : "Forging your idea…"}
+                    </p>
                   </div>
                 </div>
               ) : current ? (
@@ -269,7 +334,8 @@ export default function IdeaForge({
                     {current.mesh && (
                       <div className="absolute bottom-3 left-3 flex items-center gap-2">
                         <span className="rounded-full bg-black/60 px-2.5 py-1 text-[11px] text-white backdrop-blur">
-                          Blender mesh · {current.mesh.tris.toLocaleString()} tris
+                          {current.aiModel ? `${current.aiModel} mesh` : "Blender mesh"}
+                          {current.mesh.tris ? ` · ${current.mesh.tris.toLocaleString()} tris` : ""}
                         </span>
                         <a
                           href={current.mesh.url}
@@ -318,7 +384,7 @@ export default function IdeaForge({
               >
                 <Glyph d={GLYPHS.cube} /> {current?.build ? "Remake 3D" : "Make 3D"}
               </button>
-              {current?.build && (
+              {current?.build && !current.aiModel && (
                 <button
                   type="button"
                   onClick={() => void insert()}
@@ -398,10 +464,26 @@ export default function IdeaForge({
                   <Glyph d={GLYPHS.pencil} /> Doodle
                 </Chip>
                 {hasBlender && (
-                  <Chip active={realMesh} onClick={() => setRealMesh((v) => !v)} title="Make 3D builds a real mesh in Blender (beveled, smooth, exportable) instead of Roblox parts">
+                  <Chip
+                    active={realMesh}
+                    onClick={() => {
+                      setRealMesh((v) => !v);
+                      setAiMesh(false);
+                    }}
+                    title="Make 3D builds a real mesh in Blender (beveled, smooth, exportable) instead of Roblox parts">
                     <Glyph d={GLYPHS.cube} /> Real mesh
                   </Chip>
                 )}
+                <Chip
+                  active={aiMesh}
+                  onClick={() => {
+                    setAiMesh((v) => !v);
+                    setRealMesh(false);
+                  }}
+                  title="Make 3D turns the image into a detailed mesh with open-source 3D AI (Hunyuan3D, TRELLIS, ...), picked in Settings"
+                >
+                  <Glyph d={GLYPHS.sparkle} /> AI mesh
+                </Chip>
                 <Chip active={assetPack} onClick={() => setAssetPack((v) => !v)} title="Generate a sheet of matching variations">
                   <Glyph d={GLYPHS.grid} /> Asset Pack
                 </Chip>

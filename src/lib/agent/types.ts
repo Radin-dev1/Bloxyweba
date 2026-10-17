@@ -13,12 +13,20 @@ export type AgentEvent =
   /** A model built while Studio is offline, for the browser to place in the 3D workspace. */
   | { type: "build"; id: string; build: BuildT }
   /** A sculpted mesh (GLB, base64) from Blender, for the browser to place in the workspace. */
-  | { type: "mesh"; id: string; name: string; glb: string; tris: number; dims: [number, number, number] }
+  /** fit: the mesh wasn't scaled on the server (no Blender); scale its longest side to this many studs. */
+  | { type: "mesh"; id: string; name: string; glb: string; tris: number; dims: [number, number, number]; fit?: number }
   | { type: "error"; message: string }
   | { type: "done" };
 
 /** An image a tool hands back for the model to look at (e.g. renders of a sculpted mesh). */
-export type ToolImage = { mediaType: "image/jpeg" | "image/png"; data: string /* base64 */ };
+export type ToolImage = { mediaType: "image/jpeg" | "image/png" | "image/webp"; data: string /* base64 */ };
+
+/** The real type of an image from its first bytes (models label files loosely). */
+export function sniffImage(buf: Buffer): ToolImage["mediaType"] {
+  if (buf.subarray(0, 4).toString("latin1") === "RIFF" && buf.subarray(8, 12).toString("latin1") === "WEBP") return "image/webp";
+  if (buf[0] === 0xff && buf[1] === 0xd8) return "image/jpeg";
+  return "image/png";
+}
 
 /** Runs one tool call in Studio and returns the text (and optionally an image) the model should see. */
 export type ToolExecutor = (

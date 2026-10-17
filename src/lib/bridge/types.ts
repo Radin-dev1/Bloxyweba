@@ -53,7 +53,18 @@ export interface Bridge {
   getChatJob(sessionId: string, jobId: string, afterSeq?: number): Promise<ChatJobResult | null>;
   finishChatJob(sessionId: string, jobId: string, status: Exclude<ChatJobStatus, "queued" | "running">): Promise<boolean>;
   stopChatJob(sessionId: string, jobId: string): Promise<boolean>;
+  /** The session a plugin token belongs to (null when not paired). */
+  pluginSession(pluginToken: string | null): Promise<string | null>;
+  /** Messages typed in the Studio plugin's chat, waiting for the website tab to run them. */
+  pushInbox(sessionId: string, text: string): Promise<boolean>;
+  takeInbox(sessionId: string): Promise<string[]>;
+  /** The newest chat job of a session, so the plugin can show the conversation live. */
+  latestChatJob(sessionId: string): Promise<string | null>;
 }
+
+/** Plugin chat limits: a few queued messages, each a normal chat message long. */
+export const INBOX_MAX = 5;
+export const INBOX_TEXT_MAX = 8000;
 
 export const PAIR_CODE_TTL_MS = 10 * 60 * 1000;
 export const SESSION_TTL_MS = 24 * 60 * 60 * 1000;

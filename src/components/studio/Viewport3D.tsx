@@ -529,17 +529,30 @@ function PhotoSky({ url }: { url: string }) {
 function GltfMesh({
   url,
   position,
+  fit,
   selected,
   onPick,
 }: {
   url: string;
+  /** Scale so the longest side is this many studs, centred and on the ground (meshes not sized on the server). */
+  fit?: number;
   position: [number, number, number];
   selected: boolean;
   onPick: () => void;
 }) {
   const { scene } = useGLTF(url);
   const object = useMemo(() => {
-    const o = scene.clone(true);
+    const inner = scene.clone(true);
+    let o: THREE.Object3D = inner;
+    if (fit) {
+      const box = new THREE.Box3().setFromObject(inner);
+      const size = box.getSize(new THREE.Vector3());
+      const s = fit / Math.max(size.x, size.y, size.z, 1e-6);
+      const c = box.getCenter(new THREE.Vector3());
+      inner.scale.multiplyScalar(s);
+      inner.position.set(-c.x * s, -box.min.y * s, -c.z * s);
+      o = new THREE.Group().add(inner);
+    }
     o.traverse((c) => {
       const m = c as THREE.Mesh;
       if (m.isMesh) {
@@ -548,7 +561,7 @@ function GltfMesh({
       }
     });
     return o;
-  }, [scene]);
+  }, [scene, fit]);
   // World bounds: an invisible click target over the whole model (thin legs are hard to hit)
   // and the Studio-style selection box.
   const bounds = useMemo(() => {
@@ -701,7 +714,7 @@ export default function Viewport3D({
   options?: ViewportOptions;
   environment?: Environment;
   /** Real meshes (GLBs) placed in the workspace, e.g. from Blender. */
-  meshes?: { name: string; url: string; origin: [number, number, number] }[];
+  meshes?: { name: string; url: string; origin: [number, number, number]; fit?: number }[];
   selectedMesh?: string | null;
   onSelectMesh?: (name: string) => void;
   onEdit: (index: number, edit: PartEdit) => void;
@@ -790,6 +803,7 @@ export default function Viewport3D({
             key={m.url}
             url={m.url}
             position={m.origin}
+            fit={m.fit}
             selected={selectedMesh === m.name}
             onPick={() => onSelectMesh?.(m.name)}
           />

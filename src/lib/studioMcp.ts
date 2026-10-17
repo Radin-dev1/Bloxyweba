@@ -3,6 +3,7 @@ import path from "path";
 import { checkBuild, groundBuild, normalizeShapes } from "./buildCheck";
 import { Build, type BuildT } from "./openrouter";
 import { SYSTEM_PROMPT } from "./tools";
+import { runGenerate3D, type Generate3DOptions } from "./agent/generate3d";
 import { runSculpt } from "./agent/sculpt";
 import type { AgentEvent, AgentToolSpec, ToolExecutor } from "./agent/types";
 
@@ -240,12 +241,18 @@ Connection: you reach Roblox Studio through Roblox's built-in Studio MCP tools (
 - edit scripts with multi_edit; run any Luau (create instances, bulk edits, read positions) with execute_luau, printing what you need to see
 - build physical things with build_model (it handles anchoring, undo and placement), or execute_luau for anything procedural
 - check errors with get_console_output after changes; use start_stop_play only when a playtest is actually needed
+- generate_3d_model makes a detailed mesh with open-source AI 3D models and puts it in the user's Bloxy workspace (same Download .glb route).
 - sculpt_model (when listed) sculpts a smooth organic mesh in the user's local Blender and puts it in their Bloxy workspace, not in Studio; tell them to use Download .glb there and File > Import 3D in Studio. For organic things straight into Studio, generate_mesh is the direct route.
 - Roblox's own AI generators are available too: generate_mesh, generate_procedural_model, generate_material, generate_texture (slow; use when a real mesh or material is wanted), plus search_asset and insert_asset for Creator Store assets.`;
 
 /** Runs MCP tools against one Studio; build_model becomes execute_luau. */
-export function makeMcpExecutor(studioId: string, emit: (e: AgentEvent) => void): ToolExecutor {
-  return async (callId, name, input) => {
+export function makeMcpExecutor(studioId: string, emit: (e: AgentEvent) => void, gen: Generate3DOptions = {}): ToolExecutor {
+  return async (callId, name, input, signal) => {
+    if (name === "generate_3d_model") {
+      const r = await runGenerate3D(callId, input, emit, gen, signal);
+      emit({ type: "tool_result", id: callId, ok: r.ok, preview: r.content.slice(0, 2000) });
+      return r;
+    }
     let ok = false;
     let content: string;
     try {
