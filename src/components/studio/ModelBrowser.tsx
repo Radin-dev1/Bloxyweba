@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Search } from "../landing/icons";
-import { FREE_RECOMMENDED, RECOMMENDED as ALL_RECOMMENDED, formatContext, formatPrice, isFreeChatModel, loadTextModels, shortName, type ModelInfo } from "./models";
+import { FREE_RECOMMENDED, RECOMMENDED as ALL_RECOMMENDED, bitsLabel, formatContext, formatPrice, isFreeChatModel, loadTextModels, shortName, type ModelInfo } from "./models";
 import FreeToggle from "./FreeToggle";
 import ProviderLogo, { vendorName, vendorOf } from "./ProviderLogo";
 
@@ -22,8 +22,10 @@ function Tags({ m }: { m: ModelInfo }) {
       {m.reasoning && <span className="rounded-md bg-white/[0.07] px-1.5 py-0.5 text-[10px] text-white/60">Reasoning</span>}
       {m.vision && <span className="rounded-md bg-white/[0.07] px-1.5 py-0.5 text-[10px] text-white/60">Vision</span>}
       {m.tools && <span className="rounded-md bg-blox/15 px-1.5 py-0.5 text-[10px] text-blox-soft">Builds in Studio</span>}
-      {m.inputPrice === 0 && m.outputPrice === 0 && (
+      {m.inputPrice === 0 && m.outputPrice === 0 ? (
         <span className="rounded-md bg-signal/15 px-1.5 py-0.5 text-[10px] text-signal">Free</span>
+      ) : (
+        m.bits !== undefined && <span className="rounded-md bg-amber-300/10 px-1.5 py-0.5 text-[10px] text-amber-200/80">{bitsLabel(m)}</span>
       )}
     </>
   );
@@ -297,7 +299,7 @@ export default function ModelBrowser({
               </div>
             </dl>
             <p className="mt-3 text-[10.5px] leading-relaxed text-white/35">
-              Bits are charged at the model&apos;s real cost. Models with “Builds in Studio” can use Bloxy&apos;s Studio tools.
+              On bits, each message costs what the model really costs plus Bloxy&apos;s margin, so bigger models take more bits; free models cost none. Models with “Builds in Studio” can use Bloxy&apos;s Studio tools.
             </p>
             <button
               type="button"

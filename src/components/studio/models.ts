@@ -23,6 +23,13 @@ export function loadTextModels() {
 
 export const RECOMMENDED = PROVIDERS.openrouter.models;
 
+/** "≈ 120 bits/msg" for paid models, "Free" for free ones (what a typical message costs on bits). */
+export function bitsLabel(m: Pick<ModelInfo, "id"> & Partial<ModelInfo>) {
+  if (isFreeModel(m)) return "Free";
+  if (m.bits === undefined) return null;
+  return `≈ ${m.bits < 1000 ? m.bits : `${Math.round(m.bits / 100) / 10}k`} bits/msg`;
+}
+
 /** "Anthropic: Claude Sonnet 5.5" → "Claude Sonnet 5.5". */
 export function shortName(m: Pick<ModelInfo, "id" | "name">) {
   const n = m.name.includes(": ") ? m.name.split(": ").slice(1).join(": ") : m.name;

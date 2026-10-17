@@ -84,7 +84,7 @@ const MAKERS = [
 
 const FAQ = [
   ["What is Bloxy?", "A website with an AI agent that edits your open Roblox Studio place through a small plugin."],
-  ["Is it free?", "Yes. Sign in with Roblox for free bits every day, switch on Free models only to pay nothing at all, or add your own OpenRouter key."],
+  ["Is it free?", "Yes. Free AI models are unlimited, and a free account gets bits every day for paid models. Pro and Studio add thousands of bits a month, and bit packs top up any time. Or add your own OpenRouter key."],
   ["Do I need an API key?", "No. Bloxy runs on bits out of the box. An own key is optional, stays only in your browser, and is never saved on our server."],
   ["Can it break my game?", "Every change is one Ctrl+Z away in Studio, and it reads before it writes."],
   ["Which models work?", "Every model on OpenRouter: Claude, GPT, Gemini, Grok, DeepSeek, Kimi, Qwen and hundreds more. Pick one from the model chip in the chat, or paste any model id."],
@@ -396,7 +396,7 @@ export default function Landing() {
               {
                 icon: Sparkle,
                 title: "Free bits every day",
-                text: "Sign in with Roblox and you get bits daily. Every message costs what the model really costs, nothing marked up.",
+                text: "Sign up and you get bits every day. Each message costs bits by the model it uses, and free models cost nothing.",
               },
               {
                 icon: Shield,

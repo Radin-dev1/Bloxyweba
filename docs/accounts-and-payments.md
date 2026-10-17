@@ -82,7 +82,10 @@ account with that email.
 | `LAVA_OFFER_BITS_SMALL` | Offer id of the bit pack. |
 | `LAVA_OFFER_BITS_LARGE` | Offer id of the big bit pack. |
 | `LAVA_BITS_SMALL`, `LAVA_BITS_LARGE` | Optional: bits per pack (defaults 5,000 and 25,000). |
-| `BITS_DAILY_PRO`, `BITS_DAILY_STUDIO` | Optional: daily bits for Pro (default 5,000) and Studio (default 20,000). Free is `BITS_DAILY` (default 300). |
+| `BITS_MARKUP` | Optional: what bits charge on top of the real AI cost (default `2` = twice the cost, about 50% margin). |
+| `BITS_DAILY` | Optional: free bits topped up every day for paid models (default 100). Free models always cost 0. |
+| `PLAN_BITS_PER_USD` | Optional: bits a subscription grants per $1 of its USD price on every payment (default 1000 = full value). |
+| `AI3D_DAILY_FREE`, `AI3D_DAILY_PRO`, `AI3D_DAILY_STUDIO` | Optional: open-source AI 3D models per day (defaults 2, 25, 100). |
 
 Prices on `/pricing` are read live from your lava.top products, so changing a price there needs
 no redeploy (they refresh within 10 minutes).
@@ -92,14 +95,26 @@ no redeploy (they refresh within 10 minutes).
 - Checkout: `/pricing` → Bloxy creates a lava.top invoice for the signed-in account and sends the
   buyer to lava.top's payment page. They come back to `/billing`.
 - Bit pack paid: the bits are added once (retries of the same webhook are ignored).
-- Pro or Studio paid: the plan is on for the period and today's balance tops up to its allowance
-  right away. Each renewal extends it. Cancelling (on `/account`) stops renewal; the plan stays
+- Pro or Studio paid: the plan is on for the period, and the payment adds bits worth the plan's
+  USD price (e.g. $19.99 adds 19,990 bits; RUB/EUR buyers get the same). Each renewal extends it. Cancelling (on `/account`) stops renewal; the plan stays
   on until the end of the paid period.
 - Switching between Pro and Studio: the new plan starts at once and Bloxy cancels the old
   subscription on lava.top, so nobody pays for both. There's no proration: unused time on the old
   plan isn't refunded automatically.
 - Refunds and chargebacks are not undone automatically: if you refund someone, take the bits
   back with the admin grant tool (a negative amount) or wait for their Pro period to run out.
+
+## How you make a profit
+
+- 1 bit is worth $0.001 to the buyer: a $19.99 plan gives 19,990 bits, a $5 bit pack should give
+  5,000 bits (set `LAVA_BITS_SMALL` / `LAVA_BITS_LARGE` to match your pack prices).
+- Every AI request costs bits = its real OpenRouter cost x `BITS_MARKUP` (default 2). So the most
+  a buyer's bits can cost you is half of what they paid, even if they spend every bit on the
+  priciest model. Free models cost them nothing and cost you nothing.
+- Your real costs on top: lava.top's payment fee, and the free daily bits (`BITS_DAILY`, at most
+  about $0.05 a day per active free user at the defaults).
+- Each model shows its price in the model picker ("≈ 124 bits/msg" for Claude Opus,
+  "Free" for free models).
 
 ## Test it before going live
 

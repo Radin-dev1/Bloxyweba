@@ -15,6 +15,20 @@ const LINKS = [
 
 export default function Nav() {
   const [open, setOpen] = useState(false);
+  // Logged in? Then "Account" instead of "Log in".
+  const [me, setMe] = useState<{ name: string; tier: string | null } | null | undefined>(undefined);
+  useEffect(() => {
+    let alive = true;
+    void fetch("/api/auth/me", { cache: "no-store" })
+      .then((r) => r.json())
+      .then((d: { user?: { displayName: string } | null; account?: { pro?: boolean; tier?: string | null } | null }) => {
+        if (alive) setMe(d.user ? { name: d.user.displayName, tier: d.account?.pro ? (d.account.tier ?? "pro") : null } : null);
+      })
+      .catch(() => alive && setMe(null));
+    return () => {
+      alive = false;
+    };
+  }, []);
 
   useEffect(() => {
     document.body.style.overflow = open ? "hidden" : "";
@@ -44,6 +58,23 @@ export default function Nav() {
         </nav>
 
         <div className="flex items-center gap-2">
+          {me !== undefined &&
+            (me ? (
+              <a
+                href="/account"
+                className="hidden items-center gap-2 rounded-full border border-white/10 bg-white/[0.04] px-4 py-2 text-sm text-white/80 backdrop-blur-xl transition-colors hover:bg-white/[0.08] hover:text-white sm:flex"
+              >
+                {me.tier && <span className="rounded-full bg-blox/25 px-1.5 py-0.5 text-[10px] font-bold text-blox-soft uppercase">{me.tier}</span>}
+                Account
+              </a>
+            ) : (
+              <a
+                href="/login"
+                className="hidden rounded-full border border-white/10 bg-white/[0.04] px-4 py-2 text-sm text-white/80 backdrop-blur-xl transition-colors hover:bg-white/[0.08] hover:text-white sm:block"
+              >
+                Log in
+              </a>
+            ))}
           <a
             href="/studio"
             className="group hidden items-center gap-2 rounded-full bg-blox py-1.5 pr-1.5 pl-4 text-sm font-medium text-white shadow-[inset_0_1px_1px_rgba(255,255,255,0.3),0_8px_30px_-8px_rgba(47,125,255,0.7)] transition-transform duration-500 ease-[var(--ease-spring)] active:scale-[0.97] sm:flex"

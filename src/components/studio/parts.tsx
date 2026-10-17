@@ -507,8 +507,9 @@ export function SettingsDialog({
             <span className="font-medium text-white/85">
               Bloxy runs on bits.
             </span>{" "}
-            Sign in with Roblox to get free bits every day. Each message and
-            generation costs what the model really costs.
+            Log in for free bits every day. Each message costs bits by the model
+            it uses (bigger models take more), and free models cost nothing. Pro,
+            Studio and bit packs are on the Pricing page.
           </p>
 
           {/* Own API keys: hidden unless asked for. */}

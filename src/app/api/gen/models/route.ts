@@ -1,3 +1,4 @@
+import { bitsPerMessage } from "@/lib/bits";
 import { OPENROUTER } from "@/lib/openrouter";
 
 const SOURCES = {
@@ -29,6 +30,8 @@ export type ModelInfo = {
   /** USD per million tokens. */
   inputPrice?: number;
   outputPrice?: number;
+  /** Bits a typical chat message costs on Bloxy's bits (real cost x markup). */
+  bits?: number;
   reasoning?: boolean;
   vision?: boolean;
   tools?: boolean;
@@ -72,6 +75,7 @@ export async function GET(request: Request) {
           context: m.context_length,
           inputPrice: perMillion(m.pricing?.prompt),
           outputPrice: perMillion(m.pricing?.completion),
+          bits: bitsPerMessage({ input: perMillion(m.pricing?.prompt), output: perMillion(m.pricing?.completion) }),
           reasoning: params.includes("reasoning") || params.includes("include_reasoning"),
           vision: m.architecture?.input_modalities?.includes("image") ?? false,
           tools: params.includes("tools"),

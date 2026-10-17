@@ -661,7 +661,7 @@ export default function StudioApp() {
       <header className="pointer-events-none absolute inset-x-0 top-0 z-20 flex items-center justify-between gap-3 px-4 pt-4">
         <Link
           href="/"
-          className="pointer-events-auto flex items-center gap-2 rounded-full border border-white/10 bg-[#111318]/85 py-1 pr-3.5 pl-1 backdrop-blur-xl"
+          className="pointer-events-auto flex items-center gap-2.5 rounded-full border border-white/10 bg-[#111318]/85 py-1.5 pr-4.5 pl-1.5 backdrop-blur-xl transition-colors hover:bg-[#1b1e26]"
         >
           <BloxyMark className="size-7" />
           <BloxyWordmark className="hidden h-[15px] w-auto text-white sm:block" />

@@ -15,23 +15,24 @@ type Catalog = {
   daily: number;
   dailyPro: number;
   dailyStudio: number;
+  planBitsPerUsd: number;
+  markup: number;
+  ai3d: { free: number; pro: number; studio: number };
   error: string | null;
 };
 
-const PLANS: { id: PlanId; name: string; badge: string; fallbackBits: string; perks: string[] }[] = [
+const PLANS: { id: PlanId; name: string; badge: string; perks: string[] }[] = [
   {
     id: "pro",
     name: "Pro",
     badge: "Most popular",
-    fallbackBits: "5,000",
-    perks: ["Room for top models like Claude and GPT every day", "Bits top up the moment you subscribe", "Cancel anytime; your plan stays until the period ends"],
+    perks: ["Room for top models like Claude and GPT", "Bits land the moment you pay and never expire", "Cancel anytime; your plan stays until the period ends"],
   },
   {
     id: "studio",
     name: "Studio",
     badge: "Power users",
-    fallbackBits: "20,000",
-    perks: ["For building all day with the biggest models", "Plenty for big maps and full game systems", "Bits top up the moment you subscribe", "Cancel anytime; your plan stays until the period ends"],
+    perks: ["For building all day with the biggest models", "Plenty for big maps and full game systems", "Bits land the moment you pay and never expire", "Cancel anytime; your plan stays until the period ends"],
   },
 ];
 
@@ -104,6 +105,11 @@ export default function PricingPage() {
 
   const onSale = (item: ItemId) => !!catalog?.configured && !!catalog.items.find((i) => i.id === item)?.onSale && !!priceOf(item, item === "pro" || item === "studio" ? period : undefined);
   const packs = (["bits_small", "bits_large"] as ItemId[]).filter((id) => catalog?.items.find((i) => i.id === id)?.onSale);
+  // A plan's bits come from its USD price (the same bits whatever currency you pay in).
+  const planBits = (id: PlanId) => {
+    const usd = catalog?.prices[id]?.find((p) => p.currency === "USD" && (!p.periodicity || p.periodicity === period))?.amount;
+    return usd && catalog ? Math.round(usd * catalog.planBitsPerUsd) : null;
+  };
   const bitsOf = (item: ItemId) => catalog?.items.find((i) => i.id === item)?.bits ?? 0;
 
   return (
@@ -111,7 +117,7 @@ export default function PricingPage() {
       <div className="text-center">
         <h1 className="font-display text-[clamp(2.2rem,5vw,3.6rem)] leading-[0.95] font-bold tracking-[-0.03em]">Pick your plan</h1>
         <p className="mx-auto mt-4 max-w-lg text-white/50">
-          Start free with daily bits. Go Pro or Studio for many more every day, or top up with a bit pack whenever you need.
+          Free AI models are unlimited. Go Pro or Studio for thousands of bits every month, or top up with a bit pack whenever you need.
         </p>
         <div className="mt-7 inline-flex flex-wrap items-center justify-center gap-2">
           <div className="flex rounded-full border border-white/10 bg-white/[0.03] p-1 text-sm">
@@ -148,10 +154,10 @@ export default function PricingPage() {
           <p className="text-sm font-medium text-white/60">Free</p>
           <p className="mt-2 font-display text-4xl font-bold">{money(0, currency)}</p>
           <ul className="mt-6 grid gap-2.5 text-sm text-white/65">
-            <li>✓ {catalog ? catalog.daily.toLocaleString() : "300"} bits every day</li>
-            <li>✓ Every AI model, Studio plugin and chat</li>
-            <li>✓ Free models cost nothing at all</li>
-            <li>✓ 3D: parts, Blender sculpting, open-source 3D AI</li>
+            <li>✓ Free AI models, unlimited</li>
+            <li>✓ {catalog ? catalog.daily.toLocaleString() : "100"} bits a day for paid models</li>
+            <li>✓ {catalog ? catalog.ai3d.free : 2} AI 3D models a day</li>
+            <li>✓ Studio plugin, chat, parts and Blender sculpting</li>
           </ul>
           <a href={me?.user ? "/studio" : "/login?mode=signup"} className="mt-auto pt-8">
             <span className="block rounded-xl border border-white/15 py-2.5 text-center text-sm font-medium text-white/85 hover:bg-white/[0.06]">
@@ -181,7 +187,8 @@ export default function PricingPage() {
                 <span className="ml-1 text-base font-normal text-white/45">{PERIODS.find((x) => x.id === period)?.per}</span>
               </p>
               <ul className="mt-6 grid gap-2.5 text-sm text-white/80">
-                <li>✓ {catalog ? (plan.id === "pro" ? catalog.dailyPro : catalog.dailyStudio).toLocaleString() : plan.fallbackBits} bits every day</li>
+                <li>✓ {planBits(plan.id) ? `${planBits(plan.id)!.toLocaleString()} bits ${period === "PERIOD_YEAR" ? "a year" : "every month"}` : "Bits every month"}</li>
+                <li>✓ {catalog ? catalog.ai3d[plan.id] : plan.id === "pro" ? 25 : 100} AI 3D models a day</li>
                 {plan.perks.map((perk) => (
                   <li key={perk}>✓ {perk}</li>
                 ))}

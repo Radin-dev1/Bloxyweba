@@ -17,9 +17,11 @@ import {
   type ToolExecutor,
   type StepBilling,
 } from "@/lib/agent";
-import { BIT_ESTIMATES, refund, reserve, resolveBilling, settle } from "@/lib/bits";
+import { chatStepEstimate, refund, reserve, resolveBilling, settle } from "@/lib/bits";
 import { pickSkills, skillBlock } from "@/lib/skills";
 import { MCP_SYSTEM_PROMPT, makeMcpExecutor, mcpStudio, mcpTools } from "@/lib/studioMcp";
+import { getAccount, tierOf } from "@/lib/accounts";
+import { currentUser } from "@/lib/auth";
 import { KNOWLEDGE_TOOL, knowledgeBlock, runKnowledgeSearch } from "@/lib/knowledge";
 import { isNetworkError, NETWORK_ERROR } from "@/lib/openrouter";
 import { SYSTEM_PROMPT, TOOL_SPECS } from "@/lib/tools";
@@ -53,7 +55,10 @@ export async function POST(request: Request) {
   const parsed = Body.safeParse(await request.json().catch(() => null));
   if (!parsed.success) return Response.json({ error: "bad_request" }, { status: 400 });
   const { sessionId, provider, model, messages, imageModel, meshModel } = parsed.data;
-  const gen = { imageModel, meshModel };
+  // Who's asking: AI 3D generation is limited per plan per day.
+  const viewer = await currentUser();
+  const viewerAccount = viewer ? await getAccount(viewer.id).catch(() => null) : null;
+  const gen = { imageModel, meshModel, account: viewer ? { id: viewer.id, tier: tierOf(viewerAccount) } : null };
   const jobId = parsed.data.jobId ?? token(18);
 
   let apiKey: string;
@@ -65,15 +70,18 @@ export async function POST(request: Request) {
     apiKey = b.key;
     if (b.charge) {
       const userId = b.user.id;
+      // Each model holds what a step with it typically costs (with the markup); free ones hold 0.
+      const estimate = await chatStepEstimate(model);
       let held = 0;
       billing = {
         beforeStep: async () => {
-          if (!(await reserve(userId, BIT_ESTIMATES.chatStep))) return false;
-          held = BIT_ESTIMATES.chatStep;
+          if (!(await reserve(userId, estimate))) return false;
+          held = estimate;
           return true;
         },
         afterStep: async (cost, failed) => {
-          if (!held) return;
+          // Free models hold 0 but a fallback model could still have cost something.
+          if (!held && !(cost && cost > 0)) return;
           if (failed) await refund(userId, held);
           else await settle(userId, held, cost);
           held = 0;

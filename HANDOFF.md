@@ -27,7 +27,7 @@ Ropilot), plus a 3D workspace, a node editor, a plain chat page, accounts and pa
 | Bridge | `src/lib/bridge/` (memory locally, Upstash Redis when `KV_REST_API_*` is set) |
 | Studio app UI | `src/components/studio/` (`StudioApp.tsx` with tabs 3D Workspace / Nodes / Chat (`ChatView.tsx`) / Library (`LibraryView.tsx`) / Scripts (`ScriptsView.tsx`), `Viewport3D.tsx`, Explorer, Properties, `NodeEditor.tsx`, dock/Idea Forge), chat page `src/components/chat/` |
 | Accounts | `src/lib/accounts.ts` (email+password with scrypt, Google, Discord, Roblox linked to one account; Roblox-first accounts keep the Roblox id), `src/lib/auth.ts` (signed cookie, generic OAuth), routes `src/app/api/auth/*`, pages `/login`, `/account` |
-| Bits + plans | `src/lib/bits.ts` (daily allowance: free 300, Pro 5,000, Studio 20,000), `src/lib/kv.ts` |
+| Bits + plans | `src/lib/bits.ts`: each request costs its real OpenRouter cost x `BITS_MARKUP` (default 2, free models 0, holds sized per model), 100 free bits a day; plans grant bits worth their USD price on every payment (`planCredits` in `lava.ts`); AI 3D limited per plan per day (`QUOTAS` in `accounts.ts`). Store: `src/lib/kv.ts` |
 | Payments (lava.top) | `src/lib/lava.ts` (invoices, live prices, webhook, cancel, plan switching), routes `src/app/api/billing/*`, pages `/pricing`, `/billing`. Pro offer `3e9cb634-82fe-49ba-ad5b-9fbe2b5abc22`, Studio offer `c3fba64d-6d08-4dc8-aaa4-bdc4e4765319` (one product `dc0936b6-…`), built in as defaults |
 | Landing | `src/app/page.tsx`, `src/components/landing/`, showcase renders in `public/showcase/` |
 

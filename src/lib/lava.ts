@@ -1,7 +1,7 @@
 import { timingSafeEqual } from "crypto";
 import { getAccount, saveAccount, type Account } from "@/lib/accounts";
 import type { Tier } from "@/lib/accounts";
-import { balanceOf, dailyForTier, grant } from "@/lib/bits";
+import { grant, PLAN_BITS_PER_USD } from "@/lib/bits";
 import { kv } from "@/lib/kv";
 
 /**
@@ -146,6 +146,27 @@ export async function createCheckout(
   return invoice.paymentUrl;
 }
 
+/** Fallback plan bits when no USD price is known (per month). */
+const PLAN_FALLBACK_BITS: Record<string, number> = {
+  pro: Number(process.env.PLAN_BITS_PRO) || 20_000,
+  studio: Number(process.env.PLAN_BITS_STUDIO) || 60_000,
+};
+const MONTHS: Record<Periodicity, number> = { MONTHLY: 1, PERIOD_90_DAYS: 3, PERIOD_180_DAYS: 6, PERIOD_YEAR: 12 };
+
+/**
+ * Bits for one subscription payment: the plan's USD price for that period x PLAN_BITS_PER_USD
+ * (so RUB and EUR buyers get the same bits as USD buyers). Falls back to the paid amount when it
+ * was in USD, then to PLAN_BITS_PRO / PLAN_BITS_STUDIO per month.
+ */
+export async function planCredits(item: ItemId, periodicity: Periodicity, e?: { amount?: number; currency?: string }) {
+  const usd = (await prices().catch(() => ({}) as Partial<Record<ItemId, Price[]>>))[item]?.find(
+    (p) => p.currency === "USD" && (!p.periodicity || p.periodicity === periodicity),
+  )?.amount;
+  if (usd) return Math.round(usd * PLAN_BITS_PER_USD);
+  if (e?.currency === "USD" && e.amount) return Math.round(e.amount * PLAN_BITS_PER_USD);
+  return (PLAN_FALLBACK_BITS[item] ?? 0) * MONTHS[periodicity];
+}
+
 export async function cancelSubscription(account: Account) {
   const plan = account.plan;
   if (!plan?.subscriptionId || !plan.subscriptionEmail) throw new Error("No active subscription to cancel.");
@@ -237,11 +258,10 @@ async function applyWebhook(e: WebhookEvent, type: string): Promise<string> {
         cancelled: false,
       };
       await saveAccount(account);
-      // The plan starts now: top today's balance up to its allowance instead of tomorrow.
-      const allowance = dailyForTier(tier);
-      const balance = await balanceOf(account.id);
-      if (balance < allowance) await grant(account.id, allowance - balance);
-      return `${tier} until ${new Date(account.plan.proUntil).toISOString()} for ${account.id}`;
+      // Every payment (first or renewal) adds bits worth the plan's price.
+      const credits = await planCredits(contract.item, contract.periodicity ?? "MONTHLY", e);
+      if (credits > 0) await grant(account.id, credits);
+      return `${tier} until ${new Date(account.plan.proUntil).toISOString()} for ${account.id}, +${credits} bits`;
     }
     await grant(account.id, item.bits ?? 0);
     return `granted ${item.bits} bits to ${account.id}`;

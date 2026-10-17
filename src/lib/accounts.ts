@@ -146,6 +146,33 @@ export function tierOf(a: Pick<Account, "plan"> | null | undefined): Tier | null
   return isPro(a) ? (a!.plan!.tier ?? "pro") : null;
 }
 
+// ── Plan limits: things that cost Bloxy outside bits (open-source AI 3D runs on its HF quota) ──
+
+export type QuotaKind = "ai3d";
+
+export const QUOTAS: Record<QuotaKind, Record<"free" | Tier, number>> = {
+  ai3d: {
+    free: Number(process.env.AI3D_DAILY_FREE ?? 2),
+    pro: Number(process.env.AI3D_DAILY_PRO ?? 25),
+    studio: Number(process.env.AI3D_DAILY_STUDIO ?? 100),
+  },
+};
+
+const day = () => new Date().toISOString().slice(0, 10);
+
+/** How many of a daily-limited thing this account has used today, and its limit. */
+export async function quotaOf(accountId: string, kind: QuotaKind, tier: Tier | null) {
+  const used = (await kv().get<number>(`${P}q:${kind}:${accountId}:${day()}`)) ?? 0;
+  return { used: Number(used), limit: QUOTAS[kind][tier ?? "free"] };
+}
+
+/** Uses one; false when today's limit is reached (nothing is used then). */
+export async function takeQuota(accountId: string, kind: QuotaKind, tier: Tier | null) {
+  const limit = QUOTAS[kind][tier ?? "free"];
+  const n = await kv().incr(`${P}q:${kind}:${accountId}:${day()}`, 2 * 86_400);
+  return n <= limit;
+}
+
 /** Too many attempts from one IP/email in 15 minutes: slow brute force down. */
 export async function rateLimited(key: string, max = 10) {
   return (await kv().incr(`${P}rl:${key}`, 15 * 60)) > max;

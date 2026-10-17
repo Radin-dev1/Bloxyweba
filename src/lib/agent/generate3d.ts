@@ -1,4 +1,5 @@
 import { blenderStatus, runBlenderMesh } from "@/lib/blender";
+import { QUOTAS, takeQuota, type Tier } from "@/lib/accounts";
 import { IMAGE_MODELS, MESH_MODELS, textTo3D, type ImageModelId, type MeshModelId } from "@/lib/hf";
 import { sniffImage, type AgentEvent, type AgentToolSpec, type ToolImage } from "./types";
 
@@ -32,7 +33,8 @@ export const GENERATE_3D_TOOL: AgentToolSpec = {
 export const GENERATE_3D_NOTE = `
 You can also GENERATE 3D models with open-source AI (generate_3d_model): best for detailed or realistic single objects (characters, creatures, weapons, statues, detailed props). It is slower (20-90s) than build_model or sculpt_model, so use it when detail matters. Never use it for buildings, maps or scenes.`;
 
-export type Generate3DOptions = { imageModel?: ImageModelId; meshModel?: MeshModelId };
+/** account: who's asking, for the plan's daily AI 3D limit (signed-out users can't generate). */
+export type Generate3DOptions = { imageModel?: ImageModelId; meshModel?: MeshModelId; account?: { id: string; tier: Tier | null } | null };
 
 export async function runGenerate3D(
   callId: string,
@@ -46,6 +48,19 @@ export async function runGenerate3D(
   const description = String(args.description ?? "").slice(0, 600);
   const studs = Math.min(500, Math.max(0.5, Number(args.size_studs) || 6));
   if (!description.trim()) return { ok: false, content: "description is empty." };
+  // AI 3D runs on Bloxy's Hugging Face quota, so it's limited per plan per day.
+  if (!options.account) {
+    return { ok: false, content: "AI 3D generation needs a Bloxy account. Tell the user to log in (top right), or build it with build_model or sculpt_model instead." };
+  }
+  if (!(await takeQuota(options.account.id, "ai3d", options.account.tier))) {
+    const limit = QUOTAS.ai3d[options.account.tier ?? "free"];
+    return {
+      ok: false,
+      content:
+        `The user has used today's ${limit} AI 3D generations on their plan. Build it with build_model or sculpt_model instead, and mention ` +
+        `${options.account.tier === "studio" ? "the limit resets tomorrow" : "Pro and Studio include many more per day (see Pricing)"}.`,
+    };
+  }
 
   const withBlender = blenderStatus().available;
   // Without Blender nothing can paint an untextured mesh, so start with a textured 3D model.

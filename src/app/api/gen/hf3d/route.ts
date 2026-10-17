@@ -1,4 +1,6 @@
 import { z } from "zod";
+import { getAccount, QUOTAS, tierOf, takeQuota } from "@/lib/accounts";
+import { currentUser } from "@/lib/auth";
 import { blenderStatus, runBlenderMesh } from "@/lib/blender";
 import { hfStatus, MESH_MODELS, textTo3D } from "@/lib/hf";
 
@@ -34,6 +36,16 @@ export async function POST(request: Request) {
     concept = Buffer.from(m[2], "base64");
   }
   if (!concept && !prompt.trim()) return Response.json({ error: "Describe the object or give an image." }, { status: 400 });
+  // Runs on Bloxy's Hugging Face quota: logged-in accounts only, limited per plan per day.
+  const user = await currentUser();
+  if (!user) return Response.json({ error: "Log in to generate AI 3D models.", code: "sign_in" }, { status: 401 });
+  const tier = tierOf(await getAccount(user.id).catch(() => null));
+  if (!(await takeQuota(user.id, "ai3d", tier))) {
+    return Response.json(
+      { error: `You've used today's ${QUOTAS.ai3d[tier ?? "free"]} AI 3D models. ${tier === "studio" ? "More tomorrow." : "Pro and Studio include many more per day."}`, code: "quota" },
+      { status: 429 },
+    );
+  }
 
   const withBlender = blenderStatus().available;
   try {

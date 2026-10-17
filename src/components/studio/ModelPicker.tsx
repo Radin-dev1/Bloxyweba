@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ChevronDown, Search } from "../landing/icons";
 import ModelBrowser from "./ModelBrowser";
-import { FREE_RECOMMENDED, RECOMMENDED, isFreeChatModel, loadTextModels, shortName, type ModelInfo } from "./models";
+import { FREE_RECOMMENDED, RECOMMENDED, isFreeChatModel, loadTextModels, shortName, type ModelInfo, bitsLabel } from "./models";
 import ProviderLogo, { vendorName, vendorOf } from "./ProviderLogo";
 
 type ModelOption = { id: string; name: string };
@@ -108,6 +108,9 @@ export default function ModelPicker({
         <span className="flex w-full items-center gap-2">
           <span className="truncate text-[12.5px] text-white/90">{m.name === "Use this model id" ? m.name : shortName(m)}</span>
           {m.id === value && <span className="ml-auto shrink-0 text-[10px] text-signal">current</span>}
+          {m.id !== value && bitsLabel(m) && (
+            <span className={`ml-auto shrink-0 text-[10px] tabular-nums ${bitsLabel(m) === "Free" ? "text-signal" : "text-amber-200/70"}`}>{bitsLabel(m)}</span>
+          )}
         </span>
         <span className="block truncate text-[10.5px] text-white/40">
           {m.name === "Use this model id" ? m.id : vendorName(vendorOf(m.id))}
