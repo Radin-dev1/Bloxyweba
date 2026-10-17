@@ -20,6 +20,7 @@ import {
 import { BIT_ESTIMATES, refund, reserve, resolveBilling, settle } from "@/lib/bits";
 import { pickSkills, skillBlock } from "@/lib/skills";
 import { MCP_SYSTEM_PROMPT, makeMcpExecutor, mcpStudio, mcpTools } from "@/lib/studioMcp";
+import { isNetworkError, NETWORK_ERROR } from "@/lib/openrouter";
 import { SYSTEM_PROMPT, TOOL_SPECS } from "@/lib/tools";
 import type { Generate3DOptions } from "@/lib/agent/generate3d";
 
@@ -294,5 +295,6 @@ function describeError(err: unknown) {
     return "This model is busy or rate-limited right now (free models are limited by OpenRouter). Wait a minute, or pick another model from the model chip.";
   if (e?.status === 402) return "Your OpenRouter account is out of credits for this model. Pick a free model, or add credits on openrouter.ai.";
   if (e?.status === 404) return "That model isn't available for this API key. Pick another model in Settings.";
+  if (isNetworkError(err)) return NETWORK_ERROR;
   return e?.message ? String(e.message).slice(0, 500) : "Something went wrong.";
 }

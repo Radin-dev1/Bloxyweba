@@ -27,6 +27,8 @@ const STARTERS = [
   { title: "Design an obby", text: "Plan a 10-stage lava obby that gets harder each stage, with checkpoints" },
   { title: "Write a save system", text: "Write a DataStore save system for coins and level, with session locking" },
   { title: "Explain RemoteEvents", text: "Explain RemoteEvents vs RemoteFunctions and how to keep them secure" },
+  { title: "Sculpt a mushroom", text: "Sculpt a cute red mushroom with white spots, about 4 studs tall" },
+  { title: "Generate a dragon statue", text: "Generate a detailed 3D model of a stone dragon statue, about 12 studs tall" },
 ];
 
 const BUILDS_KEY = "bloxy.chat.builds.v1";

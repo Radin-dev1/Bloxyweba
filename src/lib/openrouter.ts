@@ -57,8 +57,34 @@ export class OpenRouterError extends Error {
   }
 }
 
+export const NETWORK_ERROR = "Couldn't reach OpenRouter (the network dropped or it's down). Check your internet connection and try again.";
+
+/** A connection that failed before any HTTP answer (offline, DNS, reset), not an API error. */
+export function isNetworkError(err: unknown) {
+  const e = err as { name?: string; message?: string; cause?: { code?: string } } | undefined;
+  if (!e || e.name === "AbortError") return false;
+  return (
+    e instanceof TypeError ||
+    /fetch failed|network|ECONNRESET|ECONNREFUSED|ENOTFOUND|ETIMEDOUT|EAI_AGAIN|socket/i.test(`${e.message} ${e.cause?.code ?? ""}`)
+  );
+}
+
+/** fetch with a few quick retries when the connection itself fails. */
+export async function fetchRetry(url: string, init: RequestInit = {}, waits = [800, 2500]) {
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return await fetch(url, init);
+    } catch (err) {
+      if (!isNetworkError(err) || attempt >= waits.length || init.signal?.aborted) {
+        throw isNetworkError(err) ? new Error(NETWORK_ERROR) : err;
+      }
+      await new Promise((r) => setTimeout(r, waits[attempt]));
+    }
+  }
+}
+
 export async function orFetch(key: string, path: string, init: RequestInit = {}) {
-  const res = await fetch(`${OPENROUTER}${path}`, {
+  const res = await fetchRetry(`${OPENROUTER}${path}`, {
     ...init,
     headers: {
       Authorization: `Bearer ${key}`,

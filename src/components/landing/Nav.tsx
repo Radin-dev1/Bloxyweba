@@ -6,6 +6,7 @@ import { ArrowUpRight, BloxyLogo } from "./icons";
 const LINKS = [
   { href: "#how", label: "How it works" },
   { href: "#tools", label: "Tools" },
+  { href: "#3d", label: "3D" },
   { href: "#models", label: "Models" },
   { href: "#faq", label: "FAQ" },
   { href: "/chat", label: "Chat" },

@@ -1,4 +1,4 @@
-import { OPENROUTER } from "@/lib/openrouter";
+import { fetchRetry, OPENROUTER } from "@/lib/openrouter";
 import { SYSTEM_PROMPT, TOOL_SPECS } from "@/lib/tools";
 import { MAX_STEPS, type AgentParams } from "./types";
 
@@ -55,7 +55,7 @@ export async function runOpenRouter({ model, apiKey, history, executeTool, emit,
       for (const wait of [0, 2000, 6000]) {
         if (wait) await new Promise((r) => setTimeout(r, wait));
         if (signal.aborted) return;
-        res = await fetch(`${OPENROUTER}/chat/completions`, {
+        res = await fetchRetry(`${OPENROUTER}/chat/completions`, {
           method: "POST",
           signal,
           headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json", "X-Title": "Bloxy" },
