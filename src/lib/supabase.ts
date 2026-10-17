@@ -11,7 +11,8 @@ import { createClient, type SupabaseClient } from "@supabase/supabase-js";
  *   NEXT_PUBLIC_SUPABASE_PROVIDERS  OAuth buttons to show, default "google"
  */
 
-const URL_ = process.env.NEXT_PUBLIC_SUPABASE_URL ?? "";
+// The project URL only: a pasted REST endpoint ("…supabase.co/rest/v1/") or trailing slash is trimmed.
+const URL_ = (process.env.NEXT_PUBLIC_SUPABASE_URL ?? "").trim().replace(/\/rest\/v1\/?$/, "").replace(/\/+$/, "");
 const ANON = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? "";
 
 export function supabaseEnabled() {
