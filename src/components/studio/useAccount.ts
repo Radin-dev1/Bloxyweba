@@ -8,10 +8,20 @@ export type Account = {
   daily: number;
   bitsEnabled: boolean;
   signInEnabled: boolean;
+  /** OAuth sign-in methods set up on this server. */
+  providers?: ("roblox" | "google" | "discord")[];
   admin: boolean;
+  account?: {
+    email: string | null;
+    hasPassword: boolean;
+    linked: string[];
+    pro: boolean;
+    proUntil: number | null;
+    cancelled: boolean;
+  } | null;
 };
 
-/** Signed-in Roblox user and their bits. Call refresh() after anything that spends bits. */
+/** Signed-in user, their plan and their bits. Call refresh() after anything that spends bits. */
 export function useAccount() {
   const [account, setAccount] = useState<Account | null>(null);
 

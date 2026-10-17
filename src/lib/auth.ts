@@ -1,12 +1,18 @@
 import { createHash, createHmac, randomBytes, timingSafeEqual } from "crypto";
 import { cookies } from "next/headers";
+import type { Account, Provider } from "@/lib/accounts";
 
 /**
- * Sign in with Roblox (OAuth 2.0 + PKCE). The session is a small signed cookie, so no
- * database is needed for auth itself; balances live in the bits ledger.
+ * Sessions and sign-in. The session is a small signed cookie naming the account; account
+ * data (sign-in methods, plan) lives in the accounts store and balances in the bits ledger.
  *
- * Env: ROBLOX_CLIENT_ID, ROBLOX_CLIENT_SECRET, AUTH_SECRET (any long random string).
- * Redirect URI to register on create.roblox.com: <site>/api/auth/roblox/callback
+ * Sign-in methods: email + password, and OAuth 2.0 (+ PKCE where supported) with Google,
+ * Discord and Roblox. Each OAuth provider is on when its client id and secret are set.
+ *
+ * Env: AUTH_SECRET (long random string, required), plus per provider:
+ *   ROBLOX_CLIENT_ID / ROBLOX_CLIENT_SECRET    redirect: <site>/api/auth/roblox/callback
+ *   GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET    redirect: <site>/api/auth/google/callback
+ *   DISCORD_CLIENT_ID / DISCORD_CLIENT_SECRET  redirect: <site>/api/auth/discord/callback
  */
 
 export const ROBLOX_OAUTH = "https://apis.roblox.com/oauth/v1";
@@ -14,10 +20,88 @@ const SESSION_COOKIE = "bloxy_session";
 const FLOW_COOKIE = "bloxy_oauth";
 const SESSION_DAYS = 30;
 
-export type User = { id: string; username: string; displayName: string; picture: string | null };
+/** The signed-in user as the session carries it. robloxId: for admin checks. */
+export type User = { id: string; username: string; displayName: string; picture: string | null; email?: string; robloxId?: string };
 
+export type OAuthProfile = { id: string; name: string; username?: string; picture: string | null; email?: string; emailVerified?: boolean };
+
+type ProviderConfig = {
+  label: string;
+  authorize: string;
+  token: string;
+  scope: string;
+  pkce: boolean;
+  /** Reads the profile with the access token. */
+  profile: (accessToken: string) => Promise<OAuthProfile>;
+};
+
+const getJson = async <T,>(url: string, token: string) => {
+  const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+  if (!res.ok) throw new Error(`${url} failed (${res.status})`);
+  return (await res.json()) as T;
+};
+
+export const PROVIDERS: Record<Provider, ProviderConfig> = {
+  roblox: {
+    label: "Roblox",
+    authorize: `${ROBLOX_OAUTH}/authorize`,
+    token: `${ROBLOX_OAUTH}/token`,
+    scope: "openid profile",
+    pkce: true,
+    async profile(t) {
+      const i = await getJson<{ sub: string; name?: string; nickname?: string; preferred_username?: string; picture?: string | null }>(`${ROBLOX_OAUTH}/userinfo`, t);
+      return { id: String(i.sub), name: i.name ?? i.nickname ?? i.preferred_username ?? "Roblox user", username: i.preferred_username ?? i.nickname, picture: i.picture ?? null };
+    },
+  },
+  google: {
+    label: "Google",
+    authorize: "https://accounts.google.com/o/oauth2/v2/auth",
+    token: "https://oauth2.googleapis.com/token",
+    scope: "openid email profile",
+    pkce: true,
+    async profile(t) {
+      const i = await getJson<{ sub: string; name?: string; email?: string; email_verified?: boolean; picture?: string }>("https://openidconnect.googleapis.com/v1/userinfo", t);
+      return { id: i.sub, name: i.name ?? i.email?.split("@")[0] ?? "Google user", picture: i.picture ?? null, email: i.email, emailVerified: i.email_verified === true };
+    },
+  },
+  discord: {
+    label: "Discord",
+    authorize: "https://discord.com/oauth2/authorize",
+    token: "https://discord.com/api/oauth2/token",
+    scope: "identify email",
+    pkce: false,
+    async profile(t) {
+      const i = await getJson<{ id: string; username: string; global_name?: string | null; avatar?: string | null; email?: string | null; verified?: boolean }>("https://discord.com/api/users/@me", t);
+      return {
+        id: i.id,
+        name: i.global_name ?? i.username,
+        username: i.username,
+        picture: i.avatar ? `https://cdn.discordapp.com/avatars/${i.id}/${i.avatar}.png?size=128` : null,
+        email: i.email ?? undefined,
+        emailVerified: i.verified === true,
+      };
+    },
+  },
+};
+
+const creds = (p: Provider) => {
+  const up = p.toUpperCase();
+  return { id: process.env[`${up}_CLIENT_ID`], secret: process.env[`${up}_CLIENT_SECRET`] };
+};
+
+export function isProvider(p: string): p is Provider {
+  return p in PROVIDERS;
+}
+
+/** Accounts work at all (sessions can be signed). */
 export function authConfigured() {
-  return !!(process.env.ROBLOX_CLIENT_ID && process.env.ROBLOX_CLIENT_SECRET && process.env.AUTH_SECRET);
+  return !!process.env.AUTH_SECRET;
+}
+
+/** Which OAuth buttons to show. */
+export function providersEnabled(): Provider[] {
+  if (!authConfigured()) return [];
+  return (Object.keys(PROVIDERS) as Provider[]).filter((p) => creds(p).id && creds(p).secret);
 }
 
 function secret() {
@@ -53,8 +137,19 @@ const cookieBase = { httpOnly: true, sameSite: "lax" as const, secure: process.e
 /** The signed-in user, or null. */
 export async function currentUser(): Promise<User | null> {
   const jar = await cookies();
-  const data = verify<User>(jar.get(SESSION_COOKIE)?.value);
-  return data ? { id: data.id, username: data.username, displayName: data.displayName, picture: data.picture } : null;
+  const d = verify<User>(jar.get(SESSION_COOKIE)?.value);
+  return d ? { id: d.id, username: d.username, displayName: d.displayName, picture: d.picture, email: d.email, robloxId: d.robloxId } : null;
+}
+
+export function userOf(a: Account): User {
+  return {
+    id: a.id,
+    username: a.email?.split("@")[0] ?? a.name,
+    displayName: a.name,
+    picture: a.picture,
+    email: a.email,
+    robloxId: a.providers.roblox,
+  };
 }
 
 export async function setSession(user: User) {
@@ -69,79 +164,82 @@ export async function clearSession() {
   (await cookies()).delete(SESSION_COOKIE);
 }
 
+/** Only same-site paths are allowed as a place to return to after signing in. */
+export function safeReturn(path: string | null | undefined, fallback = "/studio") {
+  return path && path.startsWith("/") && !path.startsWith("//") && !path.startsWith("/\\") ? path : fallback;
+}
+
 // ── OAuth flow state (state + PKCE verifier) kept in a short-lived signed cookie ──
 
-export async function startFlow(redirectUri: string, returnTo: string) {
+export async function startFlow(provider: Provider, redirectUri: string, returnTo: string) {
+  const cfg = PROVIDERS[provider];
   const state = randomBytes(16).toString("base64url");
   const verifier = randomBytes(32).toString("base64url");
-  const challenge = createHash("sha256").update(verifier).digest("base64url");
-  (await cookies()).set(FLOW_COOKIE, sign({ state, verifier, returnTo, exp: Date.now() + 10 * 60_000 }), {
+  (await cookies()).set(FLOW_COOKIE, sign({ provider, state, verifier, returnTo, exp: Date.now() + 10 * 60_000 }), {
     ...cookieBase,
     maxAge: 600,
   });
-  const url = new URL(`${ROBLOX_OAUTH}/authorize`);
-  url.searchParams.set("client_id", process.env.ROBLOX_CLIENT_ID!);
+  const url = new URL(cfg.authorize);
+  url.searchParams.set("client_id", creds(provider).id!);
   url.searchParams.set("redirect_uri", redirectUri);
-  url.searchParams.set("scope", "openid profile");
+  url.searchParams.set("scope", cfg.scope);
   url.searchParams.set("response_type", "code");
   url.searchParams.set("state", state);
-  url.searchParams.set("code_challenge", challenge);
-  url.searchParams.set("code_challenge_method", "S256");
+  if (cfg.pkce) {
+    url.searchParams.set("code_challenge", createHash("sha256").update(verifier).digest("base64url"));
+    url.searchParams.set("code_challenge_method", "S256");
+  }
+  if (provider === "google") url.searchParams.set("prompt", "select_account");
   return url.toString();
 }
 
-export async function finishFlow(state: string | null) {
+export async function finishFlow(provider: Provider, state: string | null) {
   const jar = await cookies();
-  const flow = verify<{ state: string; verifier: string; returnTo: string }>(jar.get(FLOW_COOKIE)?.value);
+  const flow = verify<{ provider: Provider; state: string; verifier: string; returnTo: string }>(jar.get(FLOW_COOKIE)?.value);
   jar.delete(FLOW_COOKIE);
-  if (!flow || !state || flow.state !== state) return null;
+  if (!flow || !state || flow.state !== state || (flow.provider && flow.provider !== provider)) return null;
   return flow;
 }
 
-/** Exchanges the code and reads the Roblox profile. */
-export async function fetchRobloxUser(code: string, verifier: string, redirectUri: string): Promise<User> {
-  const tokenRes = await fetch(`${ROBLOX_OAUTH}/token`, {
+/** Exchanges the code for a token and reads the profile. */
+export async function fetchProfile(provider: Provider, code: string, verifier: string, redirectUri: string): Promise<OAuthProfile> {
+  const cfg = PROVIDERS[provider];
+  const { id, secret: clientSecret } = creds(provider);
+  const tokenRes = await fetch(cfg.token, {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body: new URLSearchParams({
       grant_type: "authorization_code",
       code,
-      code_verifier: verifier,
-      client_id: process.env.ROBLOX_CLIENT_ID!,
-      client_secret: process.env.ROBLOX_CLIENT_SECRET!,
+      client_id: id!,
+      client_secret: clientSecret!,
       redirect_uri: redirectUri,
+      ...(cfg.pkce ? { code_verifier: verifier } : {}),
     }),
   });
-  if (!tokenRes.ok) throw new Error(`Roblox token exchange failed (${tokenRes.status})`);
+  if (!tokenRes.ok) throw new Error(`${cfg.label} token exchange failed (${tokenRes.status})`);
   const { access_token } = (await tokenRes.json()) as { access_token: string };
-  const infoRes = await fetch(`${ROBLOX_OAUTH}/userinfo`, { headers: { Authorization: `Bearer ${access_token}` } });
-  if (!infoRes.ok) throw new Error(`Roblox userinfo failed (${infoRes.status})`);
-  const info = (await infoRes.json()) as {
-    sub: string;
-    name?: string;
-    nickname?: string;
-    preferred_username?: string;
-    picture?: string | null;
-  };
-  return {
-    id: String(info.sub),
-    username: info.preferred_username ?? info.nickname ?? `user${info.sub}`,
-    displayName: info.name ?? info.nickname ?? info.preferred_username ?? "Roblox user",
-    picture: info.picture ?? null,
-  };
+  return cfg.profile(access_token);
 }
 
 export function isAdmin(user: User | null) {
   if (!user) return false;
-  return (process.env.ADMIN_ROBLOX_IDS ?? "")
+  const ids = (process.env.ADMIN_ROBLOX_IDS ?? "")
     .split(",")
     .map((s) => s.trim())
-    .filter(Boolean)
-    .includes(user.id);
+    .filter(Boolean);
+  // By account id (ADMIN_ACCOUNT_IDS) or linked Roblox id, never by email: emails from
+  // password signups are not verified.
+  const accounts = (process.env.ADMIN_ACCOUNT_IDS ?? "")
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
+  return ids.includes(user.id) || accounts.includes(user.id) || (!!user.robloxId && ids.includes(user.robloxId));
 }
 
-/** The site origin for redirects (works behind Vercel's proxy). */
+/** The site origin for redirects (works behind Vercel's proxy). SITE_URL wins when set. */
 export function originOf(request: Request) {
+  if (process.env.SITE_URL) return process.env.SITE_URL.replace(/\/+$/, "");
   const url = new URL(request.url);
   const proto = request.headers.get("x-forwarded-proto") ?? url.protocol.replace(":", "");
   const host = request.headers.get("x-forwarded-host") ?? request.headers.get("host") ?? url.host;

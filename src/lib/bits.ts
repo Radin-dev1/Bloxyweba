@@ -1,4 +1,5 @@
 import { redisFromEnv } from "@/lib/bridge/redis";
+import { getAccount, isPro } from "@/lib/accounts";
 import { currentUser, type User } from "@/lib/auth";
 import { openrouterKey } from "@/lib/openrouter";
 
@@ -17,6 +18,13 @@ import { openrouterKey } from "@/lib/openrouter";
 
 export const BITS_PER_USD = Number(process.env.BITS_PER_USD) || 1000;
 export const BITS_DAILY = Number(process.env.BITS_DAILY) || 300;
+/** Pro members get a much bigger daily allowance. */
+export const BITS_DAILY_PRO = Number(process.env.BITS_DAILY_PRO) || 5000;
+
+/** Today's allowance for this account (Pro or free). */
+export async function dailyFor(userId: string) {
+  return isPro(await getAccount(userId).catch(() => null)) ? BITS_DAILY_PRO : BITS_DAILY;
+}
 
 /** Upfront holds per kind of request, in bits (settled to the real cost afterwards). */
 export const BIT_ESTIMATES = {
@@ -105,11 +113,12 @@ export async function balanceOf(userId: string) {
   const rec = await s.get(userId);
   const day = today();
   if (!rec) {
-    await s.set(userId, BITS_DAILY, day);
-    return BITS_DAILY;
+    const daily = await dailyFor(userId);
+    await s.set(userId, daily, day);
+    return daily;
   }
   if (rec.day !== day) {
-    const topped = Math.max(rec.balance, BITS_DAILY);
+    const topped = Math.max(rec.balance, await dailyFor(userId));
     await s.set(userId, topped, day);
     return topped;
   }
@@ -174,7 +183,7 @@ export async function resolveBilling(clientKey: string | undefined): Promise<Bil
   if (!user) {
     return {
       ok: false,
-      response: Response.json({ error: "Sign in with Roblox to use your free daily bits.", code: "sign_in" }, { status: 401 }),
+      response: Response.json({ error: "Sign in to use your free daily bits.", code: "sign_in" }, { status: 401 }),
     };
   }
   return { ok: true, key: serverKey, user, charge: true };
@@ -182,7 +191,7 @@ export async function resolveBilling(clientKey: string | undefined): Promise<Bil
 
 export function outOfBits() {
   return Response.json(
-    { error: `Not enough bits for this. You get ${BITS_DAILY} free bits every day, or add your own OpenRouter key in Settings.`, code: "no_bits" },
+    { error: `Not enough bits for this. You get ${BITS_DAILY} free bits every day (${BITS_DAILY_PRO.toLocaleString("en-US")} with Pro), you can buy a bit pack on the Pricing page, or add your own OpenRouter key in Settings.`, code: "no_bits" },
     { status: 402 },
   );
 }

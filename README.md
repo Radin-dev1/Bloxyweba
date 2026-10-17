@@ -59,6 +59,10 @@ Open http://localhost:3000 for the landing page. The app itself lives at http://
 
   ⚠️ If you set these on a public deployment, **anyone using the site spends your credits**. Leave them unset to make everyone bring their own key.
 
+## Accounts, Pro and payments
+
+People sign up with email + password, Google, Discord or Roblox (one account, any mix of methods). Pro (a subscription) and bit packs are sold through lava.top in USD, EUR and RUB. Pages: `/login`, `/pricing`, `/account`. Setup steps for the domain, the sign-in apps and lava.top: [docs/accounts-and-payments.md](docs/accounts-and-payments.md).
+
 ## Bits (credits) and Roblox sign-in
 
 Bloxy can run on **your** OpenRouter key while users pay with **bits**:
@@ -89,7 +93,7 @@ In the Roblox OAuth app, add these redirect URLs: `https://<your-domain>/api/aut
 
 1. Import the GitHub repo in Vercel (framework: Next.js, no extra settings).
 2. **Add Redis** (required). In the Vercel project: *Storage → Create → Upstash Redis* (free tier works), then connect it to the project. That sets `KV_REST_API_URL` / `KV_REST_API_TOKEN`, which Bloxy picks up automatically (`UPSTASH_REDIS_REST_URL` / `UPSTASH_REDIS_REST_TOKEN` also work).
-3. Redeploy. In the plugin, use your Vercel URL (e.g. `https://bloxyweba.vercel.app`) as the website URL.
+3. Redeploy. In the plugin, use your site URL (your own domain, or the Vercel URL) as the website URL.
 
 Why Redis: Vercel runs many short-lived function instances that don't share memory, so the plugin's poll and the agent's command can land on different instances. Without Redis on Vercel, the API answers 503 with these setup steps instead of half-working.
 

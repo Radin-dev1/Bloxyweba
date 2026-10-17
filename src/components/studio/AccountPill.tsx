@@ -11,7 +11,7 @@ function Bolt({ className }: { className?: string }) {
   );
 }
 
-/** Header pill: "Sign in with Roblox", or avatar + bits with a small account menu. */
+/** Header pill: "Log in", or avatar + bits with a small account menu. */
 export default function AccountPill({
   account,
   onSignOut,
@@ -34,8 +34,9 @@ export default function AccountPill({
   const [grantAmount, setGrantAmount] = useState("500");
   const [grantMsg, setGrantMsg] = useState<string | null>(null);
 
-  if (!account?.bitsEnabled) return null;
+  if (!account || (!account.bitsEnabled && !account.signInEnabled)) return null;
   const { user } = account;
+  const pro = !!account.account?.pro;
 
   const errorBubble = authError && (
     <div className="absolute top-full right-0 z-40 mt-2 w-64 rounded-xl border border-red-400/25 bg-[#1a1215]/95 px-3 py-2 text-xs leading-relaxed text-red-200 shadow-xl">
@@ -51,14 +52,13 @@ export default function AccountPill({
     return (
       <span className="relative">
         <a
-          href="/api/auth/roblox/login?returnTo=/studio"
+          href={`/login?returnTo=${encodeURIComponent(window.location.pathname)}`}
           className="flex items-center gap-2 rounded-full border border-white/10 bg-[#111318]/85 py-1.5 pr-3.5 pl-2 text-sm text-white/85 backdrop-blur-xl transition-colors hover:bg-[#1b1e26]"
         >
           <span className="grid size-6 place-items-center rounded-full bg-blox/20 text-blox-soft">
             <Bolt className="size-3.5" />
           </span>
-          <span className="hidden sm:inline">Sign in with Roblox</span>
-          <span className="sm:hidden">Sign in</span>
+          <span>Log in</span>
         </a>
         {errorBubble}
       </span>
@@ -92,16 +92,31 @@ export default function AccountPill({
             {user.displayName.slice(0, 1).toUpperCase()}
           </span>
         )}
-        <span className="flex items-center gap-1 font-medium text-amber-200">
-          <Bolt className="size-3.5" />
-          <span className="tabular-nums">{(account.bits ?? 0).toLocaleString()}</span>
-        </span>
+        {pro && <span className="rounded-full bg-blox/25 px-1.5 py-0.5 text-[10px] font-bold tracking-wide text-blox-soft">PRO</span>}
+        {account.bitsEnabled && (
+          <span className="flex items-center gap-1 font-medium text-amber-200">
+            <Bolt className="size-3.5" />
+            <span className="tabular-nums">{(account.bits ?? 0).toLocaleString()}</span>
+          </span>
+        )}
       </button>
       {errorBubble}
       {open && (
         <div className="absolute top-full right-0 z-40 mt-2 w-72 rounded-2xl border border-white/10 bg-[#111318]/95 p-3 shadow-2xl backdrop-blur-xl">
           <p className="truncate text-sm font-semibold text-white">{user.displayName}</p>
-          <p className="truncate text-xs text-white/40">@{user.username}</p>
+          <p className="truncate text-xs text-white/40">{account.account?.email ?? `@${user.username}`}</p>
+          <div className="mt-3 flex gap-1.5">
+            <a href="/account" className="flex-1 rounded-lg bg-white/[0.06] py-1.5 text-center text-xs text-white/80 hover:bg-white/[0.1]">
+              Account
+            </a>
+            <a
+              href="/pricing"
+              className={`flex-1 rounded-lg py-1.5 text-center text-xs font-medium ${pro ? "bg-white/[0.06] text-white/80 hover:bg-white/[0.1]" : "bg-blox text-white hover:bg-blox/90"}`}
+            >
+              {pro ? "Buy bits" : "Get Pro"}
+            </a>
+          </div>
+          {account.bitsEnabled && (
           <div className="mt-3 rounded-xl bg-white/[0.04] p-3">
             <p className="flex items-center gap-1.5 text-lg font-semibold text-amber-200">
               <Bolt className="size-4" />
@@ -109,10 +124,11 @@ export default function AccountPill({
               <span className="text-xs font-normal text-white/45">bits</span>
             </p>
             <p className="mt-1 text-[11px] leading-relaxed text-white/45">
-              Tops up to {account.daily.toLocaleString()} free bits every day. Each request costs what the AI model
-              really costs.
+              Tops up to {account.daily.toLocaleString()} {pro ? "Pro" : "free"} bits every day. Each request costs what the
+              AI model really costs.
             </p>
           </div>
+          )}
           {account.admin && (
             <div className="mt-3 border-t border-white/[0.07] pt-3">
               <p className="text-[10px] font-medium tracking-[0.18em] text-white/40 uppercase">Admin · grant bits</p>
@@ -120,7 +136,7 @@ export default function AccountPill({
                 <input
                   value={grantId}
                   onChange={(e) => setGrantId(e.target.value)}
-                  placeholder="Roblox user id"
+                  placeholder="Account id, Roblox id or email"
                   className="min-w-0 flex-1 rounded-lg border border-white/10 bg-black/30 px-2 py-1.5 font-mono text-xs outline-none focus:border-blox/50"
                 />
                 <input
@@ -131,7 +147,7 @@ export default function AccountPill({
               </div>
               <button
                 onClick={() => void grant()}
-                disabled={!/^\d+$/.test(grantId.trim()) || !Number(grantAmount)}
+                disabled={!grantId.trim() || !Number(grantAmount)}
                 className="mt-2 w-full rounded-lg bg-blox py-1.5 text-xs font-medium text-white disabled:opacity-40"
               >
                 Grant
