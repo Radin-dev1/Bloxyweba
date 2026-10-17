@@ -37,24 +37,49 @@ Right now trybloxy.com points at Squarespace (four Squarespace `A` records and a
 | `KV_REST_API_URL`, `KV_REST_API_TOKEN` | Upstash Redis (Vercel → Storage). Accounts and payments are stored here. |
 | `ADMIN_ROBLOX_IDS` / `ADMIN_ACCOUNT_IDS` | Who can grant bits (Roblox ids or Bloxy account ids, comma separated). |
 
-**Email + password** works as soon as `AUTH_SECRET` is set.
+### Email, Google and Discord: through Supabase
 
-**Google**: [console.cloud.google.com](https://console.cloud.google.com) → APIs & Services →
-OAuth consent screen (External, add your domain) → Credentials → Create credentials → OAuth
-client ID → *Web application*. Authorized redirect URIs:
-`https://trybloxy.com/api/auth/google/callback` (and `http://localhost:3000/api/auth/google/callback`
-for local). Set `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET`.
+Login runs on your Supabase project. Supabase only does the login; accounts, bits, plans and
+payments stay in Bloxy (so `AUTH_SECRET` and Redis above are still needed).
 
-**Discord**: [discord.com/developers/applications](https://discord.com/developers/applications) →
-New Application → OAuth2. Copy the Client ID and reset/copy the Client Secret. Add redirect
-`https://trybloxy.com/api/auth/discord/callback`. Set `DISCORD_CLIENT_ID` and `DISCORD_CLIENT_SECRET`.
+1. **Supabase → Project Settings → API** (or *API Keys*): copy the **Project URL** and the
+   **anon / publishable** key. In Vercel set:
+   - `NEXT_PUBLIC_SUPABASE_URL` = the Project URL (`https://<project-ref>.supabase.co`)
+   - `NEXT_PUBLIC_SUPABASE_ANON_KEY` = the anon / publishable key (public, safe in the browser).
+     Never use the **service_role** key here.
+   - Optional: `NEXT_PUBLIC_SUPABASE_PROVIDERS` = which buttons to show (default `google,discord`).
+2. **Authentication → URL Configuration**:
+   - Site URL: `https://trybloxy.com`
+   - Redirect URLs: `https://trybloxy.com/auth/callback`, `https://trybloxy.com/auth/reset`,
+     `http://localhost:3000/auth/callback`, `http://localhost:3000/auth/reset`
+3. **Authentication → Sign In / Providers**:
+   - **Email**: on. Keep *Confirm email* on so people prove their address (they get a link that
+     brings them back to Bloxy logged in).
+   - **Google**: on. In [Google Cloud](https://console.cloud.google.com) → Credentials → OAuth client
+     ID (*Web application*), the Authorized redirect URI is Supabase's
+     `https://<project-ref>.supabase.co/auth/v1/callback` (Supabase shows it on the Google
+     provider page). Paste the Google client id and secret into Supabase.
+   - **Discord**: on. In the [Discord developer portal](https://discord.com/developers/applications)
+     → OAuth2, add the same Supabase callback URL as a redirect, then paste the Discord client id
+     and secret into Supabase.
+4. Redeploy on Vercel (the `NEXT_PUBLIC_` values are built into the page, so a redeploy is needed
+   after changing them).
 
-**Roblox**: in your existing OAuth app on create.roblox.com, add the redirect
-`https://trybloxy.com/api/auth/roblox/callback`. (`ROBLOX_CLIENT_ID` / `ROBLOX_CLIENT_SECRET` stay.)
+Forgot password works through Supabase too (`/auth/reset`).
 
-Buttons only appear for the methods whose id and secret are set. Signing in with a new method
-while logged in links it to the same account; a verified Google/Discord email also links to the
-account with that email.
+### Roblox: Bloxy's own login
+
+Supabase has no Roblox provider, so Roblox keeps Bloxy's own OAuth. In your OAuth app on
+create.roblox.com (scopes `openid profile`), add the redirect
+`https://trybloxy.com/api/auth/roblox/callback` and set `ROBLOX_CLIENT_ID` / `ROBLOX_CLIENT_SECRET`.
+
+Signing in with Roblox while logged in (Account → Sign-in methods → Link) links it to the same
+account, and the other way round. A confirmed Supabase email also links to an existing account
+with that verified email.
+
+Without Supabase set up, Bloxy falls back to its own email + password and its own Google /
+Discord login (`GOOGLE_CLIENT_ID` / `DISCORD_CLIENT_ID` and secrets, redirects
+`/api/auth/google/callback` and `/api/auth/discord/callback`).
 
 ## 3. Payments (lava.top)
 

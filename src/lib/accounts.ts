@@ -9,6 +9,8 @@ import { kv } from "@/lib/kv";
  */
 
 export type Provider = "roblox" | "google" | "discord";
+/** How an account can sign in: Bloxy's own OAuth providers, or a Supabase login (email, Google, Discord). */
+export type LinkKind = Provider | "supabase";
 
 export type Tier = "pro" | "studio";
 
@@ -32,7 +34,7 @@ export type Account = {
   /** Proven by Google or Discord. Password signups are unverified until then. */
   emailVerified?: boolean;
   passwordHash?: string;
-  providers: Partial<Record<Provider, string>>;
+  providers: Partial<Record<LinkKind, string>>;
   plan?: Plan;
   createdAt: number;
 };
@@ -59,7 +61,7 @@ export async function accountByEmail(email: string) {
   return id ? getAccount(id) : null;
 }
 
-export async function accountByProvider(provider: Provider, providerId: string) {
+export async function accountByProvider(provider: LinkKind, providerId: string) {
   const id = await kv().get<string>(`${P}prov:${provider}:${providerId}`);
   return id ? getAccount(id) : null;
 }
@@ -99,7 +101,7 @@ export async function createEmailAccount(email: string, password: string, name: 
  * signed-in account -> same verified email -> new account.
  */
 export async function accountForOAuth(
-  provider: Provider,
+  provider: LinkKind,
   profile: { id: string; name: string; picture: string | null; email?: string; emailVerified?: boolean },
   signedInId: string | null,
 ) {

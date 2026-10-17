@@ -1,7 +1,9 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { supabaseBrowser, supabaseEnabled, supabaseProviders } from "@/lib/supabase";
 import { AccountShell, PROVIDER_INFO, useMe, useQuery, type ProviderId } from "./shared";
+import { callbackUrl, supabaseSignOut } from "./supabaseLogin";
 
 const date = (ms: number) => new Date(ms).toLocaleDateString(undefined, { year: "numeric", month: "long", day: "numeric" });
 
@@ -37,6 +39,7 @@ export default function AccountPage() {
   const acct = me.account;
   const linked = new Set(acct?.linked ?? []);
   const available = (me.providers ?? []) as ProviderId[];
+  const sbOn = supabaseEnabled();
 
   const cancel = async () => {
     if (!window.confirm("Cancel renewal? You keep your plan until the end of the period you paid for.")) return;
@@ -121,11 +124,36 @@ export default function AccountPage() {
       <section className="mt-5 rounded-[1.4rem] border border-white/10 bg-white/[0.025] p-5">
         <p className="text-[11px] font-medium tracking-[0.18em] text-white/40 uppercase">Sign-in methods</p>
         <ul className="mt-3 grid gap-2 text-sm">
-          <li className="flex items-center justify-between rounded-xl bg-black/20 px-3 py-2.5">
-            <span>Email + password</span>
-            <span className="text-white/45">{acct?.hasPassword ? "On" : "Not set"}</span>
-          </li>
-          {available.map((p) => (
+          {sbOn ? (
+            <li className="flex items-center justify-between gap-3 rounded-xl bg-black/20 px-3 py-2.5">
+              <span>
+                Email, Google, Discord
+                <span className="block text-[11px] text-white/35">One login, through Supabase</span>
+              </span>
+              {linked.has("supabase") ? (
+                <span className="text-emerald-300/80">Linked</span>
+              ) : (
+                <span className="flex gap-3">
+                  {supabaseProviders().map((p) => (
+                    <button
+                      key={p}
+                      type="button"
+                      onClick={() => void supabaseBrowser().auth.signInWithOAuth({ provider: p, options: { redirectTo: callbackUrl("/account") } })}
+                      className="text-blox-soft hover:underline"
+                    >
+                      Link {PROVIDER_INFO[p].label}
+                    </button>
+                  ))}
+                </span>
+              )}
+            </li>
+          ) : (
+            <li className="flex items-center justify-between rounded-xl bg-black/20 px-3 py-2.5">
+              <span>Email + password</span>
+              <span className="text-white/45">{acct?.hasPassword ? "On" : "Not set"}</span>
+            </li>
+          )}
+          {available.filter((p) => !sbOn || p === "roblox").map((p) => (
             <li key={p} className="flex items-center justify-between rounded-xl bg-black/20 px-3 py-2.5">
               <span className="flex items-center gap-2.5">
                 {PROVIDER_INFO[p].icon}
@@ -147,6 +175,7 @@ export default function AccountPage() {
         type="button"
         onClick={async () => {
           await fetch("/api/auth/logout", { method: "POST" }).catch(() => {});
+          await supabaseSignOut();
           // A full reload on purpose: every part of the app re-reads the (now empty) session.
           window.location.assign(window.location.origin + "/");
         }}

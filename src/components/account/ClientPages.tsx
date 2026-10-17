@@ -17,3 +17,8 @@ export function ClientPricing() {
 export function ClientAccount() {
   return <Account />;
 }
+
+const Callback = dynamic(() => import("./AuthCallbackPage"), { ssr: false, loading: blank });
+export function ClientAuthCallback({ mode }: { mode: "callback" | "reset" }) {
+  return <Callback mode={mode} />;
+}

@@ -1,6 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { supabaseEnabled } from "@/lib/supabase";
+import { supabaseSignOut } from "../account/supabaseLogin";
 
 export type Account = {
   user: { id: string; username: string; displayName: string; picture: string | null } | null;
@@ -44,6 +46,8 @@ export function useAccount() {
 
   const signOut = useCallback(async () => {
     await fetch("/api/auth/logout", { method: "POST" }).catch(() => {});
+    // Also end the Supabase login (no-op when Supabase isn't set up).
+    if (supabaseEnabled()) await supabaseSignOut();
     await refresh();
   }, [refresh]);
 
