@@ -1,5 +1,6 @@
 import { getAccount, isPro, tierOf } from "@/lib/accounts";
 import { authConfigured, currentUser, isAdmin, providersEnabled } from "@/lib/auth";
+import { supabaseEnabled, supabaseProviders } from "@/lib/supabase";
 import { balanceOf, bitsEnabled, dailyForTier } from "@/lib/bits";
 
 /** Who's signed in, their plan and how many bits they have, for the header. */
@@ -17,6 +18,8 @@ export async function GET() {
       bitsEnabled: enabled,
       signInEnabled: authConfigured(),
       providers: providersEnabled(),
+      // Login through Supabase (email, Google): whether this deployment has its URL and key.
+      supabase: supabaseEnabled() ? supabaseProviders() : null,
       admin: isAdmin(user),
       account: account
         ? {
