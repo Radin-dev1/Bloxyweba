@@ -1,14 +1,14 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 
 /**
- * Supabase handles login (email + password, Google, Discord). Bloxy turns a Supabase login
+ * Supabase handles login (email + password, Google). Bloxy turns a Supabase login
  * into its own session (`/api/auth/supabase`), so accounts, bits, plans and Roblox linking
  * work the same however someone signs in.
  *
  * Env (both are public, safe in the browser):
  *   NEXT_PUBLIC_SUPABASE_URL        https://<project>.supabase.co
  *   NEXT_PUBLIC_SUPABASE_ANON_KEY   the anon / publishable key
- *   NEXT_PUBLIC_SUPABASE_PROVIDERS  OAuth buttons to show, default "google,discord"
+ *   NEXT_PUBLIC_SUPABASE_PROVIDERS  OAuth buttons to show, default "google"
  */
 
 const URL_ = process.env.NEXT_PUBLIC_SUPABASE_URL ?? "";
@@ -18,14 +18,14 @@ export function supabaseEnabled() {
   return !!URL_ && !!ANON;
 }
 
-export type SupabaseOAuth = "google" | "discord";
+export type SupabaseOAuth = "google";
 
 export function supabaseProviders(): SupabaseOAuth[] {
   if (!supabaseEnabled()) return [];
-  return (process.env.NEXT_PUBLIC_SUPABASE_PROVIDERS ?? "google,discord")
+  return (process.env.NEXT_PUBLIC_SUPABASE_PROVIDERS ?? "google")
     .split(",")
     .map((s) => s.trim())
-    .filter((s): s is SupabaseOAuth => s === "google" || s === "discord");
+    .filter((s): s is SupabaseOAuth => s === "google");
 }
 
 let browserClient: SupabaseClient | null = null;

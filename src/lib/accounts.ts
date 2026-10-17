@@ -3,13 +3,13 @@ import { promisify } from "util";
 import { kv } from "@/lib/kv";
 
 /**
- * Bloxy accounts. One account can sign in with email + password, Google, Discord and Roblox;
+ * Bloxy accounts. One account can sign in with email + password, Google and Roblox;
  * signing in with a new method while signed in links it. Accounts first made with Roblox keep
  * the Roblox user id as their account id, so balances from before accounts existed carry over.
  */
 
-export type Provider = "roblox" | "google" | "discord";
-/** How an account can sign in: Bloxy's own OAuth providers, or a Supabase login (email, Google, Discord). */
+export type Provider = "roblox" | "google";
+/** How an account can sign in: Bloxy's own OAuth providers, or a Supabase login (email, Google). */
 export type LinkKind = Provider | "supabase";
 
 export type Tier = "pro" | "studio";
@@ -31,7 +31,7 @@ export type Account = {
   name: string;
   picture: string | null;
   email?: string;
-  /** Proven by Google or Discord. Password signups are unverified until then. */
+  /** Proven by Google or a confirmed Supabase email. Password signups are unverified until then. */
   emailVerified?: boolean;
   passwordHash?: string;
   providers: Partial<Record<LinkKind, string>>;

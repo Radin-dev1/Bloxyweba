@@ -127,7 +127,7 @@ export default function AccountPage() {
           {sbOn ? (
             <li className="flex items-center justify-between gap-3 rounded-xl bg-black/20 px-3 py-2.5">
               <span>
-                Email, Google, Discord
+                Email and Google
                 <span className="block text-[11px] text-white/35">One login, through Supabase</span>
               </span>
               {linked.has("supabase") ? (

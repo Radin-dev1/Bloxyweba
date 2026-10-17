@@ -61,7 +61,7 @@ Open http://localhost:3000 for the landing page. The app itself lives at http://
 
 ## Accounts, Pro and payments
 
-People sign up with email + password, Google, Discord or Roblox (one account, any mix of methods). Pro (a subscription) and bit packs are sold through lava.top in USD, EUR and RUB. Pages: `/login`, `/pricing`, `/account`. Setup steps for the domain, the sign-in apps and lava.top: [docs/accounts-and-payments.md](docs/accounts-and-payments.md).
+People sign up with email + password, Google or Roblox (one account, any mix of methods). Pro (a subscription) and bit packs are sold through lava.top in USD, EUR and RUB. Pages: `/login`, `/pricing`, `/account`. Setup steps for the domain, the sign-in apps and lava.top: [docs/accounts-and-payments.md](docs/accounts-and-payments.md).
 
 ## Bits (credits) and Roblox sign-in
 

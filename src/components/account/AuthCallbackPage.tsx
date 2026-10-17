@@ -6,7 +6,7 @@ import { AccountShell, safePath } from "./shared";
 import { finishSupabaseLogin } from "./supabaseLogin";
 
 /**
- * Supabase sends people here after Google / Discord, an email confirmation or a password
+ * Supabase sends people here after Google, an email confirmation or a password
  * reset link. The code in the URL becomes a Supabase session, then a Bloxy session.
  */
 export default function AuthCallbackPage({ mode }: { mode: "callback" | "reset" }) {

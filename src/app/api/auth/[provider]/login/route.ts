@@ -1,6 +1,6 @@
 import { isProvider, originOf, providersEnabled, safeReturn, startFlow } from "@/lib/auth";
 
-/** Starts "Continue with Google / Discord / Roblox". */
+/** Starts "Continue with Google / Roblox". */
 export async function GET(request: Request, { params }: { params: Promise<{ provider: string }> }) {
   const { provider } = await params;
   const origin = originOf(request);

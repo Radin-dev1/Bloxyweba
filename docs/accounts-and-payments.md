@@ -1,6 +1,6 @@
 # Domain, accounts and payments: setup
 
-Bloxy has accounts (email + password, Google, Discord, Roblox), two subscriptions (Pro and
+Bloxy has accounts (email + password, Google, Roblox), two subscriptions (Pro and
 Studio) and bit packs paid through lava.top. The code is done; these steps connect it to your accounts. Every
 secret goes in **Vercel → Project → Settings → Environment Variables** (and `.env.local` for
 local testing), never in the code or git.
@@ -37,7 +37,7 @@ Right now trybloxy.com points at Squarespace (four Squarespace `A` records and a
 | `KV_REST_API_URL`, `KV_REST_API_TOKEN` | Upstash Redis (Vercel → Storage). Accounts and payments are stored here. |
 | `ADMIN_ROBLOX_IDS` / `ADMIN_ACCOUNT_IDS` | Who can grant bits (Roblox ids or Bloxy account ids, comma separated). |
 
-### Email, Google and Discord: through Supabase
+### Email and Google: through Supabase
 
 Login runs on your Supabase project. Supabase only does the login; accounts, bits, plans and
 payments stay in Bloxy (so `AUTH_SECRET` and Redis above are still needed).
@@ -47,7 +47,7 @@ payments stay in Bloxy (so `AUTH_SECRET` and Redis above are still needed).
    - `NEXT_PUBLIC_SUPABASE_URL` = the Project URL (`https://<project-ref>.supabase.co`)
    - `NEXT_PUBLIC_SUPABASE_ANON_KEY` = the anon / publishable key (public, safe in the browser).
      Never use the **service_role** key here.
-   - Optional: `NEXT_PUBLIC_SUPABASE_PROVIDERS` = which buttons to show (default `google,discord`).
+   - Optional: `NEXT_PUBLIC_SUPABASE_PROVIDERS` = which buttons to show (default `google`).
 2. **Authentication → URL Configuration**:
    - Site URL: `https://trybloxy.com`
    - Redirect URLs: `https://trybloxy.com/auth/callback`, `https://trybloxy.com/auth/reset`,
@@ -59,9 +59,6 @@ payments stay in Bloxy (so `AUTH_SECRET` and Redis above are still needed).
      ID (*Web application*), the Authorized redirect URI is Supabase's
      `https://<project-ref>.supabase.co/auth/v1/callback` (Supabase shows it on the Google
      provider page). Paste the Google client id and secret into Supabase.
-   - **Discord**: on. In the [Discord developer portal](https://discord.com/developers/applications)
-     → OAuth2, add the same Supabase callback URL as a redirect, then paste the Discord client id
-     and secret into Supabase.
 4. Redeploy on Vercel (the `NEXT_PUBLIC_` values are built into the page, so a redeploy is needed
    after changing them).
 
@@ -77,9 +74,8 @@ Signing in with Roblox while logged in (Account → Sign-in methods → Link) li
 account, and the other way round. A confirmed Supabase email also links to an existing account
 with that verified email.
 
-Without Supabase set up, Bloxy falls back to its own email + password and its own Google /
-Discord login (`GOOGLE_CLIENT_ID` / `DISCORD_CLIENT_ID` and secrets, redirects
-`/api/auth/google/callback` and `/api/auth/discord/callback`).
+Without Supabase set up, Bloxy falls back to its own email + password and its own Google
+login (`GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET`, redirect `/api/auth/google/callback`).
 
 ## 3. Payments (lava.top)
 

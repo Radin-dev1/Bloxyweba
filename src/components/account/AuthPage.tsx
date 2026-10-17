@@ -6,7 +6,7 @@ import { AccountShell, PROVIDER_INFO, safePath, useMe, useQuery, type ProviderId
 import { callbackUrl, finishSupabaseLogin } from "./supabaseLogin";
 
 /**
- * Log in or sign up. With Supabase set up, email + password, Google and Discord go through
+ * Log in or sign up. With Supabase set up, email + password and Google go through
  * Supabase; Roblox always uses Bloxy's own login. Without Supabase, Bloxy's own routes do it all.
  */
 export default function AuthPage() {
@@ -20,7 +20,7 @@ export default function AuthPage() {
   const [name, setName] = useState("");
   const { me, loaded } = useMe();
   const sbOn = supabaseEnabled();
-  // Supabase brings Google/Discord; Roblox (and everything, without Supabase) is Bloxy's own.
+  // Supabase brings Google; Roblox (and everything, without Supabase) is Bloxy's own.
   const bloxyProviders = ((me?.providers ?? []) as ProviderId[]).filter((p) => !sbOn || p === "roblox");
   const buttons: { id: ProviderId; via: "supabase" | "bloxy" }[] = [
     ...(sbOn ? supabaseProviders().map((id) => ({ id: id as ProviderId, via: "supabase" as const })) : []),
@@ -40,7 +40,7 @@ export default function AuthPage() {
     }
     setBusy(true);
     const { error: err } = await supabaseBrowser().auth.signInWithOAuth({
-      provider: id as "google" | "discord",
+      provider: id as "google",
       options: { redirectTo: callbackUrl(returnTo) },
     });
     if (err) fail(err);

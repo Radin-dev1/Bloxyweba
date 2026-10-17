@@ -11,7 +11,7 @@ export type Account = {
   bitsEnabled: boolean;
   signInEnabled: boolean;
   /** OAuth sign-in methods set up on this server. */
-  providers?: ("roblox" | "google" | "discord")[];
+  providers?: ("roblox" | "google")[];
   admin: boolean;
   account?: {
     email: string | null;

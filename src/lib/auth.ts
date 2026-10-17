@@ -7,13 +7,11 @@ import { storageReady } from "@/lib/kv";
  * Sessions and sign-in. The session is a small signed cookie naming the account; account
  * data (sign-in methods, plan) lives in the accounts store and balances in the bits ledger.
  *
- * Sign-in methods: email + password, and OAuth 2.0 (+ PKCE where supported) with Google,
- * Discord and Roblox. Each OAuth provider is on when its client id and secret are set.
+ * Sign-in methods: email + password, and OAuth 2.0 (+ PKCE) with Google and Roblox. Each OAuth provider is on when its client id and secret are set.
  *
  * Env: AUTH_SECRET (long random string, required), plus per provider:
  *   ROBLOX_CLIENT_ID / ROBLOX_CLIENT_SECRET    redirect: <site>/api/auth/roblox/callback
  *   GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET    redirect: <site>/api/auth/google/callback
- *   DISCORD_CLIENT_ID / DISCORD_CLIENT_SECRET  redirect: <site>/api/auth/discord/callback
  */
 
 export const ROBLOX_OAUTH = "https://apis.roblox.com/oauth/v1";
@@ -63,24 +61,6 @@ export const PROVIDERS: Record<Provider, ProviderConfig> = {
     async profile(t) {
       const i = await getJson<{ sub: string; name?: string; email?: string; email_verified?: boolean; picture?: string }>("https://openidconnect.googleapis.com/v1/userinfo", t);
       return { id: i.sub, name: i.name ?? i.email?.split("@")[0] ?? "Google user", picture: i.picture ?? null, email: i.email, emailVerified: i.email_verified === true };
-    },
-  },
-  discord: {
-    label: "Discord",
-    authorize: "https://discord.com/oauth2/authorize",
-    token: "https://discord.com/api/oauth2/token",
-    scope: "identify email",
-    pkce: false,
-    async profile(t) {
-      const i = await getJson<{ id: string; username: string; global_name?: string | null; avatar?: string | null; email?: string | null; verified?: boolean }>("https://discord.com/api/users/@me", t);
-      return {
-        id: i.id,
-        name: i.global_name ?? i.username,
-        username: i.username,
-        picture: i.avatar ? `https://cdn.discordapp.com/avatars/${i.id}/${i.avatar}.png?size=128` : null,
-        email: i.email ?? undefined,
-        emailVerified: i.verified === true,
-      };
     },
   },
 };

@@ -7,7 +7,7 @@ const Body = z.object({
   item: z.enum(["pro", "studio", "bits_small", "bits_large"]),
   currency: z.enum(["USD", "EUR", "RUB"]),
   periodicity: z.enum(["MONTHLY", "PERIOD_90_DAYS", "PERIOD_180_DAYS", "PERIOD_YEAR"]).optional(),
-  /** Needed when the account has no email yet (e.g. Roblox or Discord sign-in). */
+  /** Needed when the account has no email yet (e.g. Roblox sign-in). */
   email: z.string().max(254).optional(),
 });
 
