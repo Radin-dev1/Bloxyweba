@@ -21,7 +21,7 @@ import { blenderAvailable, toBytes, type BlenderMesh } from "../blenderMesh";
 import { MESH_MODELS } from "@/lib/hfModels";
 
 /** aiModel: the open-source 3D model that made this mesh (AI mesh mode). */
-type Idea = { id: string; prompt: string; image: string; build?: BuildT; inserted?: string; mesh?: BlenderMesh; aiModel?: string };
+type Idea = { id: string; prompt: string; image: string; build?: BuildT; inserted?: string; mesh?: BlenderMesh & { glb?: Uint8Array }; aiModel?: string };
 
 /** A short model name from the idea's words ("a cute red dragon" -> "CuteRedDragon"). */
 function nameFrom(prompt: string) {
@@ -39,6 +39,40 @@ async function asDataUrl(src: string) {
     r.onerror = () => reject(r.error);
     r.readAsDataURL(blob);
   });
+}
+
+/** Convert a generated GLB to a self-contained glTF, supported by Roblox Studio's Importer. */
+async function toRobloxGltf(glb: Uint8Array) {
+  const { GLTFLoader } = await import("three/examples/jsm/loaders/GLTFLoader.js");
+  const { GLTFExporter } = await import("three/examples/jsm/exporters/GLTFExporter.js");
+  const model = await new GLTFLoader().parseAsync(glb.slice().buffer, "");
+  model.scene.updateMatrixWorld(true);
+  const exported = await new GLTFExporter().parseAsync(model.scene, { binary: false });
+  const parsed = (typeof exported === "string" ? JSON.parse(exported) : exported) as {
+    asset?: { version?: string };
+    images?: { uri?: string }[];
+    buffers?: { uri?: string }[];
+  };
+  if (parsed.asset?.version !== "2.0") throw new Error("Roblox export didn't produce a valid glTF 2.0 document.");
+  if ([...(parsed.images ?? []), ...(parsed.buffers ?? [])].some((asset) => asset.uri && !asset.uri.startsWith("data:"))) {
+    throw new Error("The Studio export includes a separate file. Please keep the exported .gltf together with its assets.");
+  }
+  return JSON.stringify(parsed);
+}
+
+async function downloadRobloxMesh(mesh: BlenderMesh & { glb: Uint8Array }, name: string) {
+  const gltf = await toRobloxGltf(mesh.glb);
+  const safeName = name.replace(/[^\w-]+/g, "-").toLowerCase() || "bloxy-model";
+  downloadFile(gltf, "model/gltf+json", `${safeName}.gltf`);
+}
+
+function downloadFile(data: BlobPart, type: string, filename: string) {
+  const url = URL.createObjectURL(new Blob([data], { type }));
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = filename;
+  anchor.click();
+  setTimeout(() => URL.revokeObjectURL(url), 2000);
 }
 
 export type ForgeMesh = { name: string; glb: Uint8Array; dims: [number, number, number]; tris: number; fit?: number };
@@ -98,7 +132,7 @@ export default function IdeaForge({
   const [history, setHistory] = useState<Idea[]>([]);
   const [current, setCurrent] = useState<Idea | null>(null);
   const [view, setView] = useState<"image" | "3d">("image");
-  const [busy, setBusy] = useState<"image" | "3d" | "insert" | null>(null);
+  const [busy, setBusy] = useState<"image" | "3d" | "insert" | "export" | null>(null);
   /** The model while it's being generated, growing part by part. */
   const [building, setBuilding] = useState<BuildT | null>(null);
   const [error, setError] = useState<Error | null>(null);
@@ -159,7 +193,8 @@ export default function IdeaForge({
     if (!res.ok || !data.glb) throw new Error(data.error ?? `3D generation failed (${res.status})`);
     const glb = toBytes(data.glb);
     const name = nameFrom(current.prompt === "Uploaded reference" ? "Model" : current.prompt);
-    const mesh: BlenderMesh = {
+    const mesh: BlenderMesh & { glb: Uint8Array } = {
+      glb,
       url: URL.createObjectURL(new Blob([glb as BlobPart], { type: "model/gltf-binary" })),
       preview: null,
       tris: data.tris ?? 0,
@@ -216,6 +251,25 @@ export default function IdeaForge({
       setBuilding(null);
       setBusy(null);
       onSpent();
+    }
+  };
+
+  const downloadForRoblox = async () => {
+    if (!current?.mesh || busy) return;
+    setBusy("export");
+    setError(null);
+    try {
+      let mesh = current.mesh;
+      if (!mesh.glb) {
+        const response = await fetch(mesh.url);
+        if (!response.ok) throw new Error(`Couldn't read the generated mesh (${response.status}).`);
+        mesh = { ...mesh, glb: new Uint8Array(await response.arrayBuffer()) };
+      }
+      await downloadRobloxMesh(mesh as BlenderMesh & { glb: Uint8Array }, current.build?.name ?? nameFrom(current.prompt));
+    } catch (err) {
+      fail(err);
+    } finally {
+      setBusy(null);
     }
   };
 
@@ -318,12 +372,12 @@ export default function IdeaForge({
                     Building {building.name} · {building.parts.length} {building.parts.length === 1 ? "part" : "parts"}
                   </div>
                 </div>
-              ) : busy === "image" || busy === "3d" ? (
+              ) : busy ? (
                 <div className="grid h-full place-items-center bg-[#eef2f8]">
                   <div className="text-center">
                     <span className="mx-auto block size-8 animate-spin rounded-full border-2 border-blox/30 border-t-blox" />
                     <p className="mt-3 text-sm text-black/55">
-                      {busy === "3d" ? (aiMesh ? "Open-source 3D AI is building the mesh (20-90s)…" : "Building it out of Roblox parts…") : "Forging your idea…"}
+                      {busy === "3d" ? (aiMesh ? "Open-source 3D AI is building the mesh (20-90s)…" : "Building it out of Roblox parts…") : busy === "export" ? "Preparing a glTF for Roblox Studio…" : busy === "image" ? "Forging your idea…" : "Working…"}
                     </p>
                   </div>
                 </div>
@@ -337,10 +391,19 @@ export default function IdeaForge({
                           {current.aiModel ? `${current.aiModel} mesh` : "Blender mesh"}
                           {current.mesh.tris ? ` · ${current.mesh.tris.toLocaleString()} tris` : ""}
                         </span>
+                        <button
+                          type="button"
+                          onClick={() => void downloadForRoblox()}
+                          disabled={!!busy}
+                          title="Then use Roblox Studio's Importer with Upload to Roblox off and Add to Workspace on."
+                          className="rounded-full bg-blox px-2.5 py-1 text-[11px] font-medium text-white disabled:opacity-50"
+                        >
+                          {busy === "export" ? "Preparing glTF…" : "Export for Studio (.gltf)"}
+                        </button>
                         <a
                           href={current.mesh.url}
                           download={`${current.build.name}.glb`}
-                          className="rounded-full bg-blox px-2.5 py-1 text-[11px] font-medium text-white"
+                          className="rounded-full bg-black/50 px-2.5 py-1 text-[11px] font-medium text-white"
                         >
                           Download .glb
                         </a>
@@ -384,6 +447,20 @@ export default function IdeaForge({
               >
                 <Glyph d={GLYPHS.cube} /> {current?.build ? "Remake 3D" : "Make 3D"}
               </button>
+              {current?.mesh && (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => void downloadForRoblox()}
+                    disabled={!!busy}
+                    title="Export a self-contained glTF, then in Studio's Importer turn Upload to Roblox off and Add to Workspace on."
+                    className="rounded-full border border-blox/40 bg-blox/15 px-3.5 py-1.5 text-xs font-medium text-blox-soft disabled:opacity-40"
+                  >
+                    {busy === "export" ? "Preparing glTF…" : "Export for Studio (.gltf)"}
+                  </button>
+                  <p className="basis-full text-center text-[10px] text-white/40">In Studio: Import 3D → choose the .gltf → Upload to Roblox off → Add to Workspace on.</p>
+                </>
+              )}
               {current?.build && !current.aiModel && (
                 <button
                   type="button"

@@ -16,6 +16,9 @@ export type BlenderMesh = {
   dims: [number, number, number];
 };
 
+/** Blender output includes the binary mesh as well as its preview URL/metadata. */
+export type GeneratedBlenderMesh = BlenderMesh & { glb: Uint8Array };
+
 let availability: Promise<boolean> | null = null;
 
 /** Whether this server can run Blender (cached per page). */
@@ -35,7 +38,7 @@ export function toBytes(base64: string) {
 }
 
 /** Runs a Blender script into a real mesh. `targetStuds` sets the longest side. */
-export async function runBlender(script: string, targetStuds?: number, signal?: AbortSignal): Promise<BlenderMesh & { glb: Uint8Array }> {
+export async function runBlender(script: string, targetStuds?: number, signal?: AbortSignal): Promise<GeneratedBlenderMesh> {
   const res = await fetch("/api/gen/blender", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
