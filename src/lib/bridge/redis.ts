@@ -53,9 +53,14 @@ type SessionHash = {
 };
 
 export function redisFromEnv(): Redis | null {
-  // Vercel's Upstash integration sets KV_REST_API_*; Upstash's own docs use UPSTASH_REDIS_REST_*.
-  const url = process.env.UPSTASH_REDIS_REST_URL || process.env.KV_REST_API_URL;
-  const token = process.env.UPSTASH_REDIS_REST_TOKEN || process.env.KV_REST_API_TOKEN;
+  // Vercel's Upstash integration sets <PREFIX>_REST_API_URL/_TOKEN (KV_ by default, or whatever
+  // custom prefix was chosen, e.g. STORAGE_); Upstash's own docs use UPSTASH_REDIS_REST_*.
+  const prefix = Object.keys(process.env)
+    .filter((k) => k.endsWith("_REST_API_URL") && process.env[k.replace(/_URL$/, "_TOKEN")])
+    .sort((a, b) => (a === "KV_REST_API_URL" ? -1 : b === "KV_REST_API_URL" ? 1 : a.localeCompare(b)))[0]
+    ?.replace(/_REST_API_URL$/, "");
+  const url = process.env.UPSTASH_REDIS_REST_URL || (prefix ? process.env[`${prefix}_REST_API_URL`] : undefined);
+  const token = process.env.UPSTASH_REDIS_REST_TOKEN || (prefix ? process.env[`${prefix}_REST_API_TOKEN`] : undefined);
   if (!url || !token) return null;
   // We store our own JSON strings, so keep values as raw strings.
   return new Redis({ url, token, automaticDeserialization: false });
