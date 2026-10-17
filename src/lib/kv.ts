@@ -86,7 +86,16 @@ function redisKV(): KV | null {
   };
 }
 
+/**
+ * Durable storage is ready: Redis, or a local single server. On Vercel without Redis every
+ * request may hit a different instance, so memory would silently lose accounts and purchases.
+ */
+export function storageReady() {
+  return !!redisFromEnv() || !process.env.VERCEL;
+}
+
 let cached: KV | null = null;
 export function kv(): KV {
+  if (!storageReady()) throw new Error("Bloxy needs Redis on Vercel for accounts and payments: Vercel → Storage → Upstash Redis → connect → redeploy.");
   return (cached ??= redisKV() ?? memoryKV());
 }

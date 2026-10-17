@@ -2,7 +2,7 @@ import { timingSafeEqual } from "crypto";
 import { getAccount, saveAccount, type Account } from "@/lib/accounts";
 import type { Tier } from "@/lib/accounts";
 import { grant, PLAN_BITS_PER_USD } from "@/lib/bits";
-import { kv } from "@/lib/kv";
+import { kv, storageReady } from "@/lib/kv";
 
 /**
  * Payments with lava.top (https://gate.lava.top/docs). You create the products on lava.top,
@@ -49,7 +49,8 @@ export function offerOf(item: ItemId) {
 }
 
 export function billingConfigured() {
-  return !!process.env.LAVA_API_KEY && (Object.keys(ITEMS) as ItemId[]).some((i) => offerOf(i));
+  // Payments need accounts, and accounts need durable storage (Redis on Vercel).
+  return !!process.env.LAVA_API_KEY && !!process.env.AUTH_SECRET && storageReady() && (Object.keys(ITEMS) as ItemId[]).some((i) => offerOf(i));
 }
 
 async function lava<T>(path: string, init: RequestInit = {}): Promise<T> {

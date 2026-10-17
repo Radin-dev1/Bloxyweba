@@ -1,6 +1,7 @@
 import { createHash, createHmac, randomBytes, timingSafeEqual } from "crypto";
 import { cookies } from "next/headers";
 import type { Account, Provider } from "@/lib/accounts";
+import { storageReady } from "@/lib/kv";
 
 /**
  * Sessions and sign-in. The session is a small signed cookie naming the account; account
@@ -95,7 +96,8 @@ export function isProvider(p: string): p is Provider {
 
 /** Accounts work at all (sessions can be signed). */
 export function authConfigured() {
-  return !!process.env.AUTH_SECRET;
+  // Accounts need durable storage too (Redis on Vercel), or sign-ups would vanish.
+  return !!process.env.AUTH_SECRET && storageReady();
 }
 
 /** Which OAuth buttons to show. */
