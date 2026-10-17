@@ -114,6 +114,7 @@ export default function StudioApp() {
   const rightDown = useRef<{ x: number; y: number } | null>(null);
   const importInput = useRef<HTMLInputElement>(null);
   const primitiveCount = useRef(0);
+  const sampleBuildCount = useRef(0);
   const connected = !!status?.connected;
   // Roblox Studio reachable without the plugin, through Studio's built-in MCP server (chat only).
   const mcp = useStudioMcp();
@@ -350,6 +351,38 @@ export default function StudioApp() {
     if (!res.ok || !data.result?.path) throw new Error(data.error ?? `Insert failed (${res.status})`);
     void sceneApi.refresh();
     return data.result.path;
+  };
+
+  /** Adds a ready-made lighthouse so the workspace is useful without an AI key or account. */
+  const trySampleBuild = async () => {
+    const index = sampleBuildCount.current;
+    const name = uniqueName(index === 0 ? "Sample Lighthouse" : `Sample Lighthouse ${index + 1}`);
+    const origin: [number, number, number] = [index * 24, 0, 0];
+    const build: BuildT = {
+      name,
+      parts: [
+        { name: "Foundation", shape: "Block", size: [22, 1, 16], position: [0, 0.5, 0], rotation: [0, 0, 0], color: "62666d", material: "Concrete", transparency: 0 },
+        { name: "Stone Footing", shape: "Block", size: [12, 1, 10], position: [0, 1.5, 0], rotation: [0, 0, 0], color: "b8b4a8", material: "Rock", transparency: 0 },
+        { name: "Tower", shape: "Cylinder", size: [18, 6, 6], position: [0, 11, 0], rotation: [0, 0, 90], color: "eee9dc", material: "SmoothPlastic", transparency: 0 },
+        { name: "Lower Red Band", shape: "Cylinder", size: [1, 6.6, 6.6], position: [0, 4, 0], rotation: [0, 0, 90], color: "d34e48", material: "SmoothPlastic", transparency: 0 },
+        { name: "Upper Red Band", shape: "Cylinder", size: [1, 6.6, 6.6], position: [0, 17.5, 0], rotation: [0, 0, 90], color: "d34e48", material: "SmoothPlastic", transparency: 0 },
+        { name: "Lantern Room", shape: "Block", size: [4.8, 4, 4.8], position: [0, 22, 0], rotation: [0, 0, 0], color: "70c9e8", material: "Glass", transparency: 0.25 },
+        { name: "Lantern Gallery", shape: "Block", size: [7.5, 0.8, 7.5], position: [0, 19.6, 0], rotation: [0, 0, 0], color: "d34e48", material: "SmoothPlastic", transparency: 0 },
+        { name: "Roof", shape: "Block", size: [7, 1, 7], position: [0, 24.5, 0], rotation: [0, 0, 0], color: "b73d38", material: "SmoothPlastic", transparency: 0 },
+        { name: "Roof Cap", shape: "Block", size: [4.5, 1, 4.5], position: [0, 25.5, 0], rotation: [0, 0, 0], color: "d34e48", material: "SmoothPlastic", transparency: 0 },
+        { name: "Beacon", shape: "Ball", size: [2, 2, 2], position: [0, 22, -0.3], rotation: [0, 0, 0], color: "ffe28a", material: "Neon", transparency: 0 },
+        { name: "Finial", shape: "Cylinder", size: [2, 0.8, 0.8], position: [0, 27, 0], rotation: [0, 0, 90], color: "d6b76b", material: "Metal", transparency: 0 },
+        { name: "Front Window", shape: "Block", size: [1.2, 2.4, 0.12], position: [0, 11, -3.02], rotation: [0, 0, 0], color: "315b76", material: "Glass", transparency: 0.1 },
+      ],
+    };
+    try {
+      await insertBuild(build, origin);
+      sampleBuildCount.current += 1;
+      focusOn(origin);
+      flash(connected ? "Sample lighthouse added to Studio. Undo with Ctrl+Z." : "Sample lighthouse added. Select a part to edit it.");
+    } catch (err) {
+      flash((err as Error).message);
+    }
   };
 
   /**
@@ -775,6 +808,7 @@ export default function StudioApp() {
             setInput("");
           }}
           bits={settings.provider === "openrouter" && !settings.openrouterKey && account?.bitsEnabled ? account.bits : null}
+          onTrySample={() => void trySampleBuild()}
         />
       )}
 
@@ -935,6 +969,7 @@ function ChatDock({
   onFreeOnly,
   onClearChat,
   bits,
+  onTrySample,
 }: {
   chat: ReturnType<typeof useChat>;
   input: string;
@@ -947,6 +982,7 @@ function ChatDock({
   onClearChat: () => void;
   /** Bits left when chatting on bits (null hides the counter). */
   bits: number | null;
+  onTrySample: () => void;
 }) {
   const [open, setOpen] = useState(true);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -1013,9 +1049,17 @@ function ChatDock({
             />
           </div>
           {/* Starter ideas inside the prompt box while the chat is empty */}
-          {messages.length === 0 && !input && (
+          {messages.length === 0 && (
             <div className="mt-1 flex gap-1.5 overflow-x-auto pb-0.5 pl-1 [scrollbar-width:none]">
-              {CHAT_STARTERS.map((idea) => (
+              <button
+                type="button"
+                onClick={onTrySample}
+                className="shrink-0 rounded-lg border border-blox/35 bg-blox/15 px-2.5 py-1 text-[11.5px] font-medium text-blox-soft transition-colors hover:border-blox/60 hover:bg-blox/25"
+                title="Builds a sample directly in the workspace; no AI call required"
+              >
+                Try sample build · no AI
+              </button>
+              {!input && CHAT_STARTERS.map((idea) => (
                 <button
                   key={idea}
                   type="button"
