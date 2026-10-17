@@ -259,6 +259,7 @@ const TOOL_LABELS: Record<string, string> = {
   build_model: "Built",
   sculpt_model: "Sculpted",
   generate_3d_model: "Generated",
+  search_knowledge: "Looked it up",
 };
 
 /** What a failed tool was trying to do. */
@@ -273,6 +274,7 @@ const RUNNING_LABELS: Record<string, string> = {
   build_model: "Building",
   sculpt_model: "Sculpting in Blender",
   generate_3d_model: "Generating 3D model",
+  search_knowledge: "Looking it up",
 };
 
 /** Seconds since a running tool started (long jobs like 3D generation show a live timer). */
@@ -296,6 +298,7 @@ export function ToolChip({ tool }: { tool: ToolCall }) {
     args?.pattern ??
     args?.root ??
     args?.name ??
+    args?.query ??
     "") as string;
   const tone =
     tool.status === "running"

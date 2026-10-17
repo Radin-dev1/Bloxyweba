@@ -8,8 +8,11 @@ type ToolCall = { id: string; type: "function"; function: { name: string; argume
 type Part = { type: "text"; text: string } | { type: "image_url"; image_url: { url: string } };
 type Msg =
   | { role: "system" | "user"; content: string | Part[] }
-  | { role: "assistant"; content: string | null; tool_calls?: ToolCall[] }
+  | { role: "assistant"; content: string | null; tool_calls?: ToolCall[]; reasoning_details?: unknown[] }
   | { role: "tool"; tool_call_id: string; content: string };
+
+/** The strongest free OpenRouter models that call tools well (checked against the live catalog). */
+const STRONG_FREE = ["nvidia/nemotron-3-ultra-550b-a55b:free", "google/gemma-4-31b-it:free", "thinkingmachines/inkling:free"];
 
 export async function runOpenRouter({ model, apiKey, history, executeTool, emit, signal, billing, ...run }: AgentParams) {
   const tools = (run.tools ?? TOOL_SPECS).map((t) => ({
@@ -36,7 +39,7 @@ export async function runOpenRouter({ model, apiKey, history, executeTool, emit,
     }
 
     let data: {
-      choices?: { message?: { content?: string | null; tool_calls?: ToolCall[] }; finish_reason?: string }[];
+      choices?: { message?: { content?: string | null; tool_calls?: ToolCall[]; reasoning_details?: unknown[] }; finish_reason?: string }[];
       usage?: { cost?: number };
       error?: { message?: string };
     };
@@ -44,12 +47,19 @@ export async function runOpenRouter({ model, apiKey, history, executeTool, emit,
       // Free models are rate-limited hard: let OpenRouter fall back to any free model, and retry
       // briefly on rate limits / busy providers before giving up.
       const free = model.endsWith(":free") || model === "openrouter/free";
+      // "openrouter/free" picks any free model, often a tiny one: try the strongest free
+      // tool-using models first and keep the free router as the last resort.
+      const fallbacks = free ? [...STRONG_FREE.filter((m) => m !== model), "openrouter/free"] : [];
+      const primary = model === "openrouter/free" ? STRONG_FREE[0] : model;
       const body = JSON.stringify({
-        model,
-        ...(free && model !== "openrouter/free" ? { models: [model, "openrouter/free"] } : {}),
+        model: primary,
+        ...(free ? { models: [primary, ...fallbacks.filter((m) => m !== primary)].slice(0, 3) } : {}),
         messages,
         tools,
         max_tokens: 16000,
+        // Think before acting. Free models get the most thinking; paid ones a balanced amount
+        // (it costs output tokens). Models without reasoning ignore this.
+        reasoning: { effort: free ? "high" : "medium" },
       });
       let res: Response | null = null;
       for (const wait of [0, 2000, 6000]) {
@@ -88,7 +98,8 @@ export async function runOpenRouter({ model, apiKey, history, executeTool, emit,
     const calls = msg.tool_calls ?? [];
     if (calls.length === 0) return;
 
-    messages.push({ role: "assistant", content: msg.content ?? null, tool_calls: calls });
+    // Reasoning models need their reasoning handed back with the tool calls to continue.
+    messages.push({ role: "assistant", content: msg.content ?? null, tool_calls: calls, ...(msg.reasoning_details?.length ? { reasoning_details: msg.reasoning_details } : {}) });
     const results = await Promise.all(
       calls.map(async (call) => {
         let args: unknown = {};

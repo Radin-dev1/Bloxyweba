@@ -1,6 +1,6 @@
 # Where Bloxy's skill packs come from
 
-Bloxy's AI loads short skill packs (`src/lib/skills.ts`) when a request needs them. They are
+Bloxy's AI loads short skill packs (`src/lib/skills.ts`) when a request needs them, and searches a knowledge base (`data/knowledge/chunks.json`, built by `scripts/build-knowledge.mjs`) that holds the full reference docs of the three MIT projects below, split into about 900 sections. Their licence notices are in `data/knowledge/LICENSES.md`. They are
 written in our own words and condensed for an AI prompt. Thanks to these projects, whose work
 they were learned from:
 

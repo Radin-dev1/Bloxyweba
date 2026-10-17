@@ -113,6 +113,7 @@ The plugin's website URL must use HTTPS in production. Studio asks the user once
   - Models are free-text fields with suggestions from OpenRouter's live model lists.
 - **Chat dock**: the prompt bar floats over the workspace, and the conversation shows live tool calls.
 - **Chat inside Roblox Studio**: once the plugin (0.4.0) is paired, its panel becomes a chat. Messages run through your open Bloxy tab (your model, key or bits) and the reply streams back into Studio.
+- **Knowledge base**: about 900 sections of Roblox and Blender engineering notes (`data/knowledge`, from MIT-licensed skill repos). Each chat message gets the most relevant sections, and the AI can call `search_knowledge` mid-task. Rebuild with `node scripts/build-knowledge.mjs <dir with the cloned repos>`.
 - **Open-source 3D models** (Hugging Face, picked in Settings): an image model (FLUX.1 schnell, Qwen-Image 2512, HiDream-O1) draws a concept and a 3D model (Hunyuan3D 2.1, TRELLIS.2, Stable Fast 3D, UniForge3D, Hunyuan3D 2) builds the mesh. If one is busy the next is tried. With Blender installed the mesh is welded, painted from the concept, cut to 10,000 triangles and scaled to studs. Use it from chat (`generate_3d_model`) or Idea Forge (**AI mesh**). Meshes stay in the Bloxy workspace: select one and press **Download .glb**, then File > Import 3D in Studio.
 
 ### Matching Roblox Studio's look

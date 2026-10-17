@@ -20,6 +20,7 @@ import {
 import { BIT_ESTIMATES, refund, reserve, resolveBilling, settle } from "@/lib/bits";
 import { pickSkills, skillBlock } from "@/lib/skills";
 import { MCP_SYSTEM_PROMPT, makeMcpExecutor, mcpStudio, mcpTools } from "@/lib/studioMcp";
+import { KNOWLEDGE_TOOL, knowledgeBlock, runKnowledgeSearch } from "@/lib/knowledge";
 import { isNetworkError, NETWORK_ERROR } from "@/lib/openrouter";
 import { SYSTEM_PROMPT, TOOL_SPECS } from "@/lib/tools";
 import type { Generate3DOptions } from "@/lib/agent/generate3d";
@@ -101,7 +102,12 @@ export async function POST(request: Request) {
   // Load the skill packs this request needs (modeling, maps, textures...), like skills on demand.
   // Sculpting only when this run can actually sculpt (offline mode with Blender on this machine).
   const canSculpt = !studioConnected && sculptAvailable();
-  const skills = skillBlock(pickSkills(history.at(-1)?.content ?? "").filter((id) => id !== "sculpting" || canSculpt));
+  // Plus the knowledge-base sections that match this request (the previous user turn too, so
+  // follow-ups like "now fix it" still find the topic).
+  const users = history.filter((m) => m.role === "user");
+  const skills =
+    skillBlock(pickSkills(history.at(-1)?.content ?? "").filter((id) => id !== "sculpting" || canSculpt)) +
+    (await knowledgeBlock(users.slice(-2).map((m) => m.content.slice(0, 1500)).join("\n")));
   const jobCreated = sessionId ? await bridge.createChatJob(sessionId, jobId).catch(() => false) : false;
   if (!sessionId || !jobCreated) return streamReply(request, { provider, model, apiKey, history, billing, skills, mcp, gen });
 
@@ -215,7 +221,25 @@ type StreamRun = {
  * Tools, prompt and executor for this run: the Bloxy plugin when it's connected, else Roblox
  * Studio's built-in MCP server when a Studio is reachable, else offline (build into the workspace).
  */
+/** Every mode also gets search_knowledge, answered here from Bloxy's knowledge base. */
 async function agentSetup(
+  pluginSession: string | undefined,
+  mcp: { id: string; name: string } | null,
+  skills: string,
+  emit: (e: AgentEvent) => void,
+  gen: Generate3DOptions = {},
+) {
+  const setup = await modeSetup(pluginSession, mcp, skills, emit, gen);
+  const executeTool: ToolExecutor = async (id, name, input, signal) => {
+    if (name !== "search_knowledge") return setup.executeTool(id, name, input, signal);
+    const r = await runKnowledgeSearch(input);
+    emit({ type: "tool_result", id, ok: r.ok, preview: r.content.slice(0, 600) });
+    return r;
+  };
+  return { ...setup, executeTool, tools: [...(setup.tools ?? TOOL_SPECS), KNOWLEDGE_TOOL] };
+}
+
+async function modeSetup(
   pluginSession: string | undefined,
   mcp: { id: string; name: string } | null,
   skills: string,

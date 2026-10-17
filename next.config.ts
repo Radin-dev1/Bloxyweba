@@ -8,6 +8,7 @@ const nextConfig: NextConfig = {
     "/api/plugin/download": ["./plugin/Bloxy.server.lua"],
     "/api/gen/model3d": ["./data/3dcode/index.json"],
     "/api/gen/blender": ["./blender/bloxy_runner.py"],
+    "/api/chat": ["./data/knowledge/chunks.json"],
   },
   turbopack: {
     rules: {

@@ -1047,6 +1047,7 @@ local TOOL_WORDS = {
 	build_model = { "Building", "Built" },
 	sculpt_model = { "Sculpting", "Sculpted" },
 	generate_3d_model = { "Generating 3D model", "Generated" },
+	search_knowledge = { "Looking it up", "Looked it up" },
 	run_luau = { "Running Luau", "Ran Luau" },
 	write_script = { "Writing", "Wrote" },
 	edit_script = { "Editing", "Edited" },

@@ -29,7 +29,7 @@ function compact(event: unknown) {
   const e = event as { type?: string; name?: string; args?: Record<string, unknown> } & Record<string, unknown>;
   if (e?.type === "tool_call") {
     const a = e.args ?? {};
-    const target = a.name ?? a.path ?? a.parent ?? a.pattern ?? "";
+    const target = a.name ?? a.query ?? a.path ?? a.parent ?? a.pattern ?? "";
     return { type: "tool_call", id: e.id, name: e.name, target: String(target).slice(0, 80) };
   }
   if (e?.type === "tool_result") return { type: "tool_result", id: e.id, ok: e.ok };
