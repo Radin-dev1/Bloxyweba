@@ -5,17 +5,29 @@ packs paid through lava.top. The code is done; these steps connect it to your ac
 secret goes in **Vercel → Project → Settings → Environment Variables** (and `.env.local` for
 local testing), never in the code or git.
 
-Replace `bloxy.example` below with your domain.
+## 1. Domain (trybloxy.com, registered at Squarespace)
 
-## 1. Domain
+Right now trybloxy.com points at Squarespace (four Squarespace `A` records and a `www` CNAME to
+`ext-sq.squarespace.com`). Move it to Vercel:
 
-1. Vercel → your project → **Settings → Domains** → add `bloxy.example` (and `www.bloxy.example`).
-2. At your domain registrar, add the DNS records Vercel shows. Usually:
-   - `A` record, name `@`, value `76.76.21.21`
-   - `CNAME` record, name `www`, value `cname.vercel-dns.com`
-3. Wait until Vercel shows the domain as valid (minutes to a few hours). HTTPS is automatic.
-4. Add the env var `SITE_URL=https://bloxy.example` so sign-in and payment redirects always use it.
-5. In the Studio plugin, type `https://bloxy.example` as the website URL.
+1. **Vercel** → your project → **Settings → Domains** → add `trybloxy.com`, then add
+   `www.trybloxy.com` and choose to redirect it to `trybloxy.com`. Vercel then shows the exact
+   records it wants. Use those values; they're usually:
+   - `A` record, host `@`, value `76.76.21.21`
+   - `CNAME` record, host `www`, value `cname.vercel-dns.com`
+2. **Squarespace** → Domains → trybloxy.com → **DNS** (DNS settings):
+   - Delete the **Squarespace Defaults** preset (the four `A` records `198.185.159.144`,
+     `198.185.159.145`, `198.49.23.144`, `198.49.23.145` and the `www` CNAME to
+     `ext-sq.squarespace.com`). If a Squarespace site is connected to the domain, disconnect it
+     first.
+   - Under **Custom records**, add the records Vercel showed in step 1.
+   - Leave any `MX` / email records alone if you use email on this domain.
+3. Wait until Vercel shows both domains as **Valid Configuration** (usually minutes, up to a few
+   hours). HTTPS certificates are automatic.
+4. Add the env var `SITE_URL=https://trybloxy.com` and redeploy, so sign-in and payment redirects
+   always use the real domain.
+5. The Studio plugin now defaults to `https://trybloxy.com` (re-download it from the site). For
+   local development, type `http://localhost:3000` in the plugin's Website URL field instead.
 
 ## 2. Accounts
 
@@ -30,15 +42,15 @@ Replace `bloxy.example` below with your domain.
 **Google**: [console.cloud.google.com](https://console.cloud.google.com) → APIs & Services →
 OAuth consent screen (External, add your domain) → Credentials → Create credentials → OAuth
 client ID → *Web application*. Authorized redirect URIs:
-`https://bloxy.example/api/auth/google/callback` (and `http://localhost:3000/api/auth/google/callback`
+`https://trybloxy.com/api/auth/google/callback` (and `http://localhost:3000/api/auth/google/callback`
 for local). Set `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET`.
 
 **Discord**: [discord.com/developers/applications](https://discord.com/developers/applications) →
 New Application → OAuth2. Copy the Client ID and reset/copy the Client Secret. Add redirect
-`https://bloxy.example/api/auth/discord/callback`. Set `DISCORD_CLIENT_ID` and `DISCORD_CLIENT_SECRET`.
+`https://trybloxy.com/api/auth/discord/callback`. Set `DISCORD_CLIENT_ID` and `DISCORD_CLIENT_SECRET`.
 
 **Roblox**: in your existing OAuth app on create.roblox.com, add the redirect
-`https://bloxy.example/api/auth/roblox/callback`. (`ROBLOX_CLIENT_ID` / `ROBLOX_CLIENT_SECRET` stay.)
+`https://trybloxy.com/api/auth/roblox/callback`. (`ROBLOX_CLIENT_ID` / `ROBLOX_CLIENT_SECRET` stay.)
 
 Buttons only appear for the methods whose id and secret are set. Signing in with a new method
 while logged in links it to the same account; a verified Google/Discord email also links to the
@@ -53,7 +65,7 @@ account with that email.
    - **Big bit pack**: a one-time digital product (gives 25,000 bits).
 2. Copy each product's **offer id** (the price id; also visible via the API's products list).
 3. lava.top → Settings → **API key**: create one.
-4. lava.top → **Webhooks**: URL `https://bloxy.example/api/billing/webhook`, authentication by
+4. lava.top → **Webhooks**: URL `https://trybloxy.com/api/billing/webhook`, authentication by
    **API key**, and use a long random string you make up as the key. Enable payment success,
    payment failed, subscription renewal and subscription cancelled events.
 5. Set the env vars and redeploy:

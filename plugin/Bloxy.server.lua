@@ -24,7 +24,7 @@ if RunService:IsRunning() and not RunService:IsEdit() then
 	return
 end
 
-local DEFAULT_SERVER = "http://localhost:3000"
+local DEFAULT_SERVER = "https://trybloxy.com"
 local PLUGIN_VERSION = "0.4.0"
 local MAX_RESULT_CHARS = 200000
 -- The 3D snapshot is sent straight to the website, not to the AI, so it may be bigger.
