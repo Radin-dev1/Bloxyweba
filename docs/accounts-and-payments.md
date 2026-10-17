@@ -1,7 +1,7 @@
 # Domain, accounts and payments: setup
 
-Bloxy has accounts (email + password, Google, Discord, Roblox), a Pro subscription and bit
-packs paid through lava.top. The code is done; these steps connect it to your accounts. Every
+Bloxy has accounts (email + password, Google, Discord, Roblox), two subscriptions (Pro and
+Studio) and bit packs paid through lava.top. The code is done; these steps connect it to your accounts. Every
 secret goes in **Vercel → Project → Settings → Environment Variables** (and `.env.local` for
 local testing), never in the code or git.
 
@@ -58,12 +58,16 @@ account with that email.
 
 ## 3. Payments (lava.top)
 
-1. In lava.top, create three products, each with a price in **USD, EUR and RUB**:
-   - **Bloxy Pro**: a *subscription*, monthly price (optionally a yearly one too: the pricing page
-     then shows a Monthly/Yearly switch).
-   - **Bit pack**: a one-time digital product (gives 5,000 bits).
-   - **Big bit pack**: a one-time digital product (gives 25,000 bits).
-2. Copy each product's **offer id** (the price id; also visible via the API's products list).
+1. In lava.top, set up what you sell, each price in **USD, EUR and RUB**:
+   - **Pro** and **Studio**: subscriptions. **Done already**: both are prices of the product
+     `dc0936b6-7d8a-44b0-b529-6f11867e5fd2`. Pro is offer `3e9cb634-82fe-49ba-ad5b-9fbe2b5abc22`,
+     Studio is offer `c3fba64d-6d08-4dc8-aaa4-bdc4e4765319`. Both ids are built into the code, so
+     no env var is needed for them. A yearly price on an offer adds a Monthly/Yearly switch.
+   - **Bit pack** and **Big bit pack**: one-time digital products (5,000 and 25,000 bits). Not
+     created yet; the Bit packs section stays hidden until at least one is set.
+2. Copy each id from the product link: `app.lava.top/products/<product id>/<offer id>`. Use the
+   **offer id** (the last part). When one product has several prices, as Pro and Studio do, only
+   the offer id picks the right one.
 3. lava.top → Settings → **API key**: create one.
 4. lava.top → **Webhooks**: URL `https://trybloxy.com/api/billing/webhook`, authentication by
    **API key**, and use a long random string you make up as the key. Enable payment success,
@@ -74,11 +78,11 @@ account with that email.
 | --- | --- |
 | `LAVA_API_KEY` | The API key from step 3. |
 | `LAVA_WEBHOOK_SECRET` | The random string you gave the webhook in step 4. |
-| `LAVA_OFFER_PRO` | Offer id of Bloxy Pro. |
+| `LAVA_OFFER_PRO`, `LAVA_OFFER_STUDIO` | Optional: override the built-in Pro / Studio offer ids. |
 | `LAVA_OFFER_BITS_SMALL` | Offer id of the bit pack. |
 | `LAVA_OFFER_BITS_LARGE` | Offer id of the big bit pack. |
 | `LAVA_BITS_SMALL`, `LAVA_BITS_LARGE` | Optional: bits per pack (defaults 5,000 and 25,000). |
-| `BITS_DAILY_PRO` | Optional: Pro daily bits (default 5,000; free is `BITS_DAILY`, default 300). |
+| `BITS_DAILY_PRO`, `BITS_DAILY_STUDIO` | Optional: daily bits for Pro (default 5,000) and Studio (default 20,000). Free is `BITS_DAILY` (default 300). |
 
 Prices on `/pricing` are read live from your lava.top products, so changing a price there needs
 no redeploy (they refresh within 10 minutes).
@@ -88,9 +92,12 @@ no redeploy (they refresh within 10 minutes).
 - Checkout: `/pricing` → Bloxy creates a lava.top invoice for the signed-in account and sends the
   buyer to lava.top's payment page. They come back to `/billing`.
 - Bit pack paid: the bits are added once (retries of the same webhook are ignored).
-- Pro paid: Pro is on for the period and today's balance tops up to the Pro allowance right away.
-  Each renewal extends it. Cancelling (on `/account`) stops renewal; Pro stays on until the end
-  of the paid period.
+- Pro or Studio paid: the plan is on for the period and today's balance tops up to its allowance
+  right away. Each renewal extends it. Cancelling (on `/account`) stops renewal; the plan stays
+  on until the end of the paid period.
+- Switching between Pro and Studio: the new plan starts at once and Bloxy cancels the old
+  subscription on lava.top, so nobody pays for both. There's no proration: unused time on the old
+  plan isn't refunded automatically.
 - Refunds and chargebacks are not undone automatically: if you refund someone, take the bits
   back with the admin grant tool (a negative amount) or wait for their Pro period to run out.
 

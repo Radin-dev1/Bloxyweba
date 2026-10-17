@@ -16,6 +16,7 @@ export type Account = {
     hasPassword: boolean;
     linked: string[];
     pro: boolean;
+    tier?: "pro" | "studio" | null;
     proUntil: number | null;
     cancelled: boolean;
   } | null;

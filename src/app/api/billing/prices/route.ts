@@ -1,11 +1,11 @@
 import { connection } from "next/server";
-import { BITS_DAILY, BITS_DAILY_PRO } from "@/lib/bits";
+import { BITS_DAILY, BITS_DAILY_PRO, BITS_DAILY_STUDIO } from "@/lib/bits";
 import { billingConfigured, ITEMS, offerOf, prices, type ItemId } from "@/lib/lava";
 
 /** What's for sale and for how much (prices come from the lava.top products). */
 export async function GET() {
   await connection(); // per request: prices and settings change without a rebuild
-  const items = (Object.keys(ITEMS) as ItemId[]).map((id) => ({ id, ...ITEMS[id], env: undefined, onSale: !!offerOf(id) }));
+  const items = (Object.keys(ITEMS) as ItemId[]).map((id) => ({ id, ...ITEMS[id], env: undefined, offer: undefined, onSale: !!offerOf(id) }));
   let list: Awaited<ReturnType<typeof prices>> = {};
   let error: string | null = null;
   if (billingConfigured()) {
@@ -16,7 +16,7 @@ export async function GET() {
     }
   }
   return Response.json(
-    { configured: billingConfigured(), items, prices: list, daily: BITS_DAILY, dailyPro: BITS_DAILY_PRO, error },
+    { configured: billingConfigured(), items, prices: list, daily: BITS_DAILY, dailyPro: BITS_DAILY_PRO, dailyStudio: BITS_DAILY_STUDIO, error },
     { headers: { "Cache-Control": "no-store" } },
   );
 }

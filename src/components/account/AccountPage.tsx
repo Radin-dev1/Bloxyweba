@@ -39,11 +39,11 @@ export default function AccountPage() {
   const available = (me.providers ?? []) as ProviderId[];
 
   const cancel = async () => {
-    if (!window.confirm("Cancel Pro renewal? You keep Pro until the end of the period you paid for.")) return;
+    if (!window.confirm("Cancel renewal? You keep your plan until the end of the period you paid for.")) return;
     setCancelling(true);
     const res = await fetch("/api/billing/cancel", { method: "POST" });
     const data = (await res.json().catch(() => ({}))) as { error?: string };
-    setMessage(res.ok ? "Renewal cancelled. Pro stays on until your period ends." : (data.error ?? "Couldn't cancel."));
+    setMessage(res.ok ? "Renewal cancelled. Your plan stays on until the period ends." : (data.error ?? "Couldn't cancel."));
     setCancelling(false);
     void refresh();
   };
@@ -85,7 +85,9 @@ export default function AccountPage() {
         {acct?.pro ? (
           <>
             <p className="mt-2 flex items-center gap-2 text-lg font-semibold">
-              <span className="rounded-full bg-blox px-2 py-0.5 text-[11px] font-bold tracking-wide text-white">PRO</span>
+              <span className={`rounded-full px-2 py-0.5 text-[11px] font-bold tracking-wide text-white ${acct.tier === "studio" ? "bg-violet-500" : "bg-blox"}`}>
+                {acct.tier === "studio" ? "STUDIO" : "PRO"}
+              </span>
               {me.daily.toLocaleString()} bits every day
             </p>
             <p className="mt-1 text-sm text-white/50">
@@ -101,7 +103,7 @@ export default function AccountPage() {
           <>
             <p className="mt-2 text-lg font-semibold">Free · {me.daily.toLocaleString()} bits every day</p>
             <a href="/pricing" className="mt-4 inline-flex rounded-xl bg-blox px-4 py-2 text-sm font-semibold text-white hover:bg-blox/90">
-              Upgrade to Pro
+              See plans
             </a>
           </>
         )}

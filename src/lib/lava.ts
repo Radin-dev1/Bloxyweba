@@ -1,6 +1,7 @@
 import { timingSafeEqual } from "crypto";
 import { getAccount, saveAccount, type Account } from "@/lib/accounts";
-import { balanceOf, BITS_DAILY_PRO, grant } from "@/lib/bits";
+import type { Tier } from "@/lib/accounts";
+import { balanceOf, dailyForTier, grant } from "@/lib/bits";
 import { kv } from "@/lib/kv";
 
 /**
@@ -12,7 +13,8 @@ import { kv } from "@/lib/kv";
  *   LAVA_API_KEY            API key from lava.top (Settings -> API), used as X-Api-Key
  *   LAVA_WEBHOOK_SECRET     A long random string; enter it in lava.top's webhook settings as the
  *                           API key lava.top sends to <site>/api/billing/webhook
- *   LAVA_OFFER_PRO          Offer id of the Pro subscription product
+ *   LAVA_OFFER_PRO          Offer id (or product id) of the Pro subscription
+ *   LAVA_OFFER_STUDIO       Offer id (or product id) of the Studio subscription
  *   LAVA_OFFER_BITS_SMALL   Offer id of the small bit pack (LAVA_BITS_SMALL bits, default 5,000)
  *   LAVA_OFFER_BITS_LARGE   Offer id of the large bit pack (LAVA_BITS_LARGE bits, default 25,000)
  */
@@ -23,20 +25,27 @@ const P = "bloxy:bill:";
 
 export type Currency = "USD" | "EUR" | "RUB";
 export type Periodicity = "MONTHLY" | "PERIOD_90_DAYS" | "PERIOD_180_DAYS" | "PERIOD_YEAR";
-export type ItemId = "pro" | "bits_small" | "bits_large";
+export type ItemId = "pro" | "studio" | "bits_small" | "bits_large";
 
 export const CURRENCIES: Currency[] = ["USD", "EUR", "RUB"];
 
-export const ITEMS: Record<ItemId, { env: string; label: string; subscription: boolean; bits?: number }> = {
-  pro: { env: "LAVA_OFFER_PRO", label: "Bloxy Pro", subscription: true },
+/**
+ * What's for sale. `offer` is the built-in lava.top offer id (offer ids aren't secret); the env
+ * var overrides it. Pro and Studio are two prices of one lava.top product
+ * (dc0936b6-7d8a-44b0-b529-6f11867e5fd2), so they must be set by offer id, not product id.
+ */
+export const ITEMS: Record<ItemId, { env: string; offer?: string; label: string; subscription: boolean; bits?: number }> = {
+  pro: { env: "LAVA_OFFER_PRO", offer: "3e9cb634-82fe-49ba-ad5b-9fbe2b5abc22", label: "Bloxy Pro", subscription: true },
+  studio: { env: "LAVA_OFFER_STUDIO", offer: "c3fba64d-6d08-4dc8-aaa4-bdc4e4765319", label: "Bloxy Studio", subscription: true },
   bits_small: { env: "LAVA_OFFER_BITS_SMALL", label: "Bit pack", subscription: false, bits: Number(process.env.LAVA_BITS_SMALL) || 5000 },
   bits_large: { env: "LAVA_OFFER_BITS_LARGE", label: "Big bit pack", subscription: false, bits: Number(process.env.LAVA_BITS_LARGE) || 25000 },
 };
 
 const PERIOD_DAYS: Record<Periodicity, number> = { MONTHLY: 31, PERIOD_90_DAYS: 91, PERIOD_180_DAYS: 182, PERIOD_YEAR: 366 };
 
+/** What's configured for an item: an offer id, or a product id (resolved via the catalog). */
 export function offerOf(item: ItemId) {
-  return process.env[ITEMS[item].env]?.trim() || null;
+  return process.env[ITEMS[item].env]?.trim() || ITEMS[item].offer || null;
 }
 
 export function billingConfigured() {
@@ -55,31 +64,51 @@ async function lava<T>(path: string, init: RequestInit = {}): Promise<T> {
   return (res.status === 204 ? null : await res.json()) as T;
 }
 
-// ── Prices, read from your lava.top products (cached 10 minutes) ──
+// ── Catalog: your lava.top products, offers and prices (cached 10 minutes) ──
 
 export type Price = { amount: number; currency: Currency; periodicity: string | null };
-let priceCache: { at: number; prices: Partial<Record<ItemId, Price[]>> } | null = null;
+type Offer = { id: string; prices?: { amount: number | null; currency: Currency; periodicity?: string | null }[] };
+let catalogCache: { at: number; offers: Map<string, Offer>; products: Map<string, Offer[]> } | null = null;
 
-export async function prices(): Promise<Partial<Record<ItemId, Price[]>>> {
-  if (priceCache && Date.now() - priceCache.at < 10 * 60_000) return priceCache.prices;
-  type Offer = { id: string; prices?: { amount: number | null; currency: Currency; periodicity?: string | null }[] };
+async function catalog() {
+  if (catalogCache && Date.now() - catalogCache.at < 10 * 60_000) return catalogCache;
   const offers = new Map<string, Offer>();
+  const products = new Map<string, Offer[]>();
   let url: string | null = "/api/v2/products?showAllSubscriptionPeriods=true";
   for (let page = 0; url && page < 10; page++) {
-    const data: { items?: { data?: { offers?: Offer[] | null } }[]; nextPage?: string | null } = await lava(url);
-    for (const item of data.items ?? []) for (const o of item.data?.offers ?? []) offers.set(o.id, o);
+    const data: { items?: { data?: { id?: string; offers?: Offer[] | null } }[]; nextPage?: string | null } = await lava(url);
+    for (const item of data.items ?? []) {
+      const list = item.data?.offers ?? [];
+      if (item.data?.id) products.set(item.data.id, list);
+      for (const o of list) offers.set(o.id, o);
+    }
     url = data.nextPage ? data.nextPage.replace(GATE, "") : null;
   }
+  catalogCache = { at: Date.now(), offers, products };
+  return catalogCache;
+}
+
+/**
+ * The offer to sell for an item. The env var may hold the offer id or, since lava.top's links
+ * show both, the product id; a product id means its first offer.
+ */
+async function resolveOffer(item: ItemId): Promise<Offer | null> {
+  const id = offerOf(item);
+  if (!id) return null;
+  const c = await catalog();
+  return c.offers.get(id) ?? c.products.get(id)?.[0] ?? null;
+}
+
+export async function prices(): Promise<Partial<Record<ItemId, Price[]>>> {
   const out: Partial<Record<ItemId, Price[]>> = {};
   for (const item of Object.keys(ITEMS) as ItemId[]) {
-    const offer = offers.get(offerOf(item) ?? "");
+    const offer = await resolveOffer(item);
     if (offer) {
       out[item] = (offer.prices ?? [])
         .filter((p) => p.amount !== null)
         .map((p) => ({ amount: Number(p.amount), currency: p.currency, periodicity: p.periodicity ?? null }));
     }
   }
-  priceCache = { at: Date.now(), prices: out };
   return out;
 }
 
@@ -92,7 +121,8 @@ export async function createCheckout(
   item: ItemId,
   { email, currency, periodicity, returnUrl }: { email: string; currency: Currency; periodicity?: Periodicity; returnUrl: string },
 ) {
-  const offerId = offerOf(item);
+  // A configured id that isn't in the catalog is still tried as an offer id (lava.top decides).
+  const offerId = (await resolveOffer(item).catch(() => null))?.id ?? offerOf(item);
   if (!offerId) throw new Error(`${ITEMS[item].label} isn't on sale yet.`);
   const sub = ITEMS[item].subscription;
   const invoice = await lava<{ id: string; paymentUrl?: string | null }>("/api/v3/invoice", {
@@ -183,19 +213,35 @@ async function applyWebhook(e: WebhookEvent, type: string): Promise<string> {
 
   if (type === "payment.success" || type === "subscription.recurring.payment.success") {
     if (item.subscription) {
+      const tier = contract.item as Tier;
       const days = PERIOD_DAYS[contract.periodicity ?? "MONTHLY"];
-      const from = Math.max(Date.now(), account.plan?.proUntil ?? 0);
+      const subscriptionId = e.parentContractId || e.contractId!;
+      const previous = account.plan;
+      // A late renewal of a subscription they already switched away from doesn't change the plan.
+      if (type === "subscription.recurring.payment.success" && previous?.subscriptionId && previous.subscriptionId !== subscriptionId) {
+        return `renewal of a replaced subscription ignored for ${account.id}`;
+      }
+      // Switching plans (Pro <-> Studio): stop the old subscription so nobody pays twice.
+      if (previous?.subscriptionId && previous.subscriptionId !== subscriptionId && !previous.cancelled && previous.subscriptionEmail) {
+        await lava(`/api/v1/subscriptions?contractId=${encodeURIComponent(previous.subscriptionId)}&email=${encodeURIComponent(previous.subscriptionEmail)}`, {
+          method: "DELETE",
+        }).catch((err) => console.error("[bloxy] couldn't cancel the previous subscription", err));
+      }
+      const sameSub = previous?.subscriptionId === subscriptionId;
+      const from = sameSub ? Math.max(Date.now(), previous?.proUntil ?? 0) : Date.now();
       account.plan = {
+        tier,
         proUntil: from + days * 86_400_000,
-        subscriptionId: e.parentContractId || e.contractId,
+        subscriptionId,
         subscriptionEmail: contract.email,
         cancelled: false,
       };
       await saveAccount(account);
-      // Pro starts now: top today's balance up to the Pro allowance instead of tomorrow.
+      // The plan starts now: top today's balance up to its allowance instead of tomorrow.
+      const allowance = dailyForTier(tier);
       const balance = await balanceOf(account.id);
-      if (balance < BITS_DAILY_PRO) await grant(account.id, BITS_DAILY_PRO - balance);
-      return `pro until ${new Date(account.plan.proUntil).toISOString()} for ${account.id}`;
+      if (balance < allowance) await grant(account.id, allowance - balance);
+      return `${tier} until ${new Date(account.plan.proUntil).toISOString()} for ${account.id}`;
     }
     await grant(account.id, item.bits ?? 0);
     return `granted ${item.bits} bits to ${account.id}`;

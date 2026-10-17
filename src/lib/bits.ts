@@ -1,5 +1,5 @@
 import { redisFromEnv } from "@/lib/bridge/redis";
-import { getAccount, isPro } from "@/lib/accounts";
+import { getAccount, tierOf, type Tier } from "@/lib/accounts";
 import { currentUser, type User } from "@/lib/auth";
 import { openrouterKey } from "@/lib/openrouter";
 
@@ -18,12 +18,17 @@ import { openrouterKey } from "@/lib/openrouter";
 
 export const BITS_PER_USD = Number(process.env.BITS_PER_USD) || 1000;
 export const BITS_DAILY = Number(process.env.BITS_DAILY) || 300;
-/** Pro members get a much bigger daily allowance. */
+/** Paid plans get a much bigger daily allowance. */
 export const BITS_DAILY_PRO = Number(process.env.BITS_DAILY_PRO) || 5000;
+export const BITS_DAILY_STUDIO = Number(process.env.BITS_DAILY_STUDIO) || 20000;
 
-/** Today's allowance for this account (Pro or free). */
+export function dailyForTier(tier: Tier | null) {
+  return tier === "studio" ? BITS_DAILY_STUDIO : tier === "pro" ? BITS_DAILY_PRO : BITS_DAILY;
+}
+
+/** Today's allowance for this account (by plan). */
 export async function dailyFor(userId: string) {
-  return isPro(await getAccount(userId).catch(() => null)) ? BITS_DAILY_PRO : BITS_DAILY;
+  return dailyForTier(tierOf(await getAccount(userId).catch(() => null)));
 }
 
 /** Upfront holds per kind of request, in bits (settled to the real cost afterwards). */
@@ -191,7 +196,7 @@ export async function resolveBilling(clientKey: string | undefined): Promise<Bil
 
 export function outOfBits() {
   return Response.json(
-    { error: `Not enough bits for this. You get ${BITS_DAILY} free bits every day (${BITS_DAILY_PRO.toLocaleString("en-US")} with Pro), you can buy a bit pack on the Pricing page, or add your own OpenRouter key in Settings.`, code: "no_bits" },
+    { error: `Not enough bits for this. You get ${BITS_DAILY} free bits every day (${BITS_DAILY_PRO.toLocaleString("en-US")} with Pro, ${BITS_DAILY_STUDIO.toLocaleString("en-US")} with Studio), you can buy a bit pack on the Pricing page, or add your own OpenRouter key in Settings.`, code: "no_bits" },
     { status: 402 },
   );
 }

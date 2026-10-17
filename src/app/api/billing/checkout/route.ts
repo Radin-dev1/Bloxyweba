@@ -4,7 +4,7 @@ import { currentUser, originOf } from "@/lib/auth";
 import { billingConfigured, createCheckout } from "@/lib/lava";
 
 const Body = z.object({
-  item: z.enum(["pro", "bits_small", "bits_large"]),
+  item: z.enum(["pro", "studio", "bits_small", "bits_large"]),
   currency: z.enum(["USD", "EUR", "RUB"]),
   periodicity: z.enum(["MONTHLY", "PERIOD_90_DAYS", "PERIOD_180_DAYS", "PERIOD_YEAR"]).optional(),
   /** Needed when the account has no email yet (e.g. Roblox or Discord sign-in). */

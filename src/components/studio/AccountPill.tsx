@@ -37,6 +37,7 @@ export default function AccountPill({
   if (!account || (!account.bitsEnabled && !account.signInEnabled)) return null;
   const { user } = account;
   const pro = !!account.account?.pro;
+  const tierName = account.account?.tier === "studio" ? "Studio" : "Pro";
 
   const errorBubble = authError && (
     <div className="absolute top-full right-0 z-40 mt-2 w-64 rounded-xl border border-red-400/25 bg-[#1a1215]/95 px-3 py-2 text-xs leading-relaxed text-red-200 shadow-xl">
@@ -92,7 +93,11 @@ export default function AccountPill({
             {user.displayName.slice(0, 1).toUpperCase()}
           </span>
         )}
-        {pro && <span className="rounded-full bg-blox/25 px-1.5 py-0.5 text-[10px] font-bold tracking-wide text-blox-soft">PRO</span>}
+        {pro && (
+          <span className={`rounded-full px-1.5 py-0.5 text-[10px] font-bold tracking-wide ${tierName === "Studio" ? "bg-violet-500/25 text-violet-200" : "bg-blox/25 text-blox-soft"}`}>
+            {tierName.toUpperCase()}
+          </span>
+        )}
         {account.bitsEnabled && (
           <span className="flex items-center gap-1 font-medium text-amber-200">
             <Bolt className="size-3.5" />
@@ -124,7 +129,7 @@ export default function AccountPill({
               <span className="text-xs font-normal text-white/45">bits</span>
             </p>
             <p className="mt-1 text-[11px] leading-relaxed text-white/45">
-              Tops up to {account.daily.toLocaleString()} {pro ? "Pro" : "free"} bits every day. Each request costs what the
+              Tops up to {account.daily.toLocaleString()} {pro ? tierName : "free"} bits every day. Each request costs what the
               AI model really costs.
             </p>
           </div>

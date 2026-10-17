@@ -6,15 +6,34 @@ import { AccountShell, useMe } from "./shared";
 
 type Currency = "USD" | "EUR" | "RUB";
 type Price = { amount: number; currency: Currency; periodicity: string | null };
-type ItemId = "pro" | "bits_small" | "bits_large";
+type ItemId = "pro" | "studio" | "bits_small" | "bits_large";
+type PlanId = "pro" | "studio";
 type Catalog = {
   configured: boolean;
   items: { id: ItemId; label: string; subscription: boolean; bits?: number; onSale: boolean }[];
   prices: Partial<Record<ItemId, Price[]>>;
   daily: number;
   dailyPro: number;
+  dailyStudio: number;
   error: string | null;
 };
+
+const PLANS: { id: PlanId; name: string; badge: string; fallbackBits: string; perks: string[] }[] = [
+  {
+    id: "pro",
+    name: "Pro",
+    badge: "Most popular",
+    fallbackBits: "5,000",
+    perks: ["Room for top models like Claude and GPT every day", "Bits top up the moment you subscribe", "Cancel anytime; your plan stays until the period ends"],
+  },
+  {
+    id: "studio",
+    name: "Studio",
+    badge: "Power users",
+    fallbackBits: "20,000",
+    perks: ["For building all day with the biggest models", "Plenty for big maps and full game systems", "Bits top up the moment you subscribe", "Cancel anytime; your plan stays until the period ends"],
+  },
+];
 
 /** A sensible default currency from the visitor's language and time zone. */
 function guessCurrency(): Currency {
@@ -53,8 +72,8 @@ export default function PricingPage() {
 
   const priceOf = (item: ItemId, periodicity?: string) =>
     catalog?.prices[item]?.find((p) => p.currency === currency && (!periodicity || !p.periodicity || p.periodicity === periodicity)) ?? null;
-  const hasYearly = !!catalog?.prices.pro?.some((p) => p.periodicity === "PERIOD_YEAR");
-  const pro = !!me?.account?.pro;
+  const hasYearly = !!(["pro", "studio"] as PlanId[]).some((id) => catalog?.prices[id]?.some((p) => p.periodicity === "PERIOD_YEAR"));
+  const tier = me?.account?.pro ? (me.account.tier ?? "pro") : null;
 
   const buy = async (item: ItemId, withEmail?: string) => {
     if (!me?.user) {
@@ -67,7 +86,7 @@ export default function PricingPage() {
       const res = await fetch("/api/billing/checkout", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ item, currency, ...(item === "pro" ? { periodicity: period } : {}), ...(withEmail ? { email: withEmail } : {}) }),
+        body: JSON.stringify({ item, currency, ...(item === "pro" || item === "studio" ? { periodicity: period } : {}), ...(withEmail ? { email: withEmail } : {}) }),
       });
       const data = (await res.json().catch(() => ({}))) as { paymentUrl?: string; error?: string; code?: string };
       if (data.code === "need_email") {
@@ -76,23 +95,23 @@ export default function PricingPage() {
         return;
       }
       if (!res.ok || !data.paymentUrl) throw new Error(data.error ?? "Checkout failed.");
-      window.location.href = data.paymentUrl;
+      window.location.assign(data.paymentUrl); // lava.top's payment page
     } catch (err) {
       setError((err as Error).message);
       setBusy(null);
     }
   };
 
-  const onSale = (item: ItemId) => !!catalog?.configured && !!catalog.items.find((i) => i.id === item)?.onSale && !!priceOf(item, item === "pro" ? period : undefined);
+  const onSale = (item: ItemId) => !!catalog?.configured && !!catalog.items.find((i) => i.id === item)?.onSale && !!priceOf(item, item === "pro" || item === "studio" ? period : undefined);
+  const packs = (["bits_small", "bits_large"] as ItemId[]).filter((id) => catalog?.items.find((i) => i.id === id)?.onSale);
   const bitsOf = (item: ItemId) => catalog?.items.find((i) => i.id === item)?.bits ?? 0;
-  const proPrice = priceOf("pro", period);
 
   return (
     <AccountShell wide>
       <div className="text-center">
-        <h1 className="font-display text-[clamp(2.2rem,5vw,3.6rem)] leading-[0.95] font-bold tracking-[-0.03em]">Build more with Pro</h1>
+        <h1 className="font-display text-[clamp(2.2rem,5vw,3.6rem)] leading-[0.95] font-bold tracking-[-0.03em]">Pick your plan</h1>
         <p className="mx-auto mt-4 max-w-lg text-white/50">
-          Start free with daily bits. Go Pro for {catalog ? catalog.dailyPro.toLocaleString() : "5,000"} bits every day, or top up with a bit pack whenever you need.
+          Start free with daily bits. Go Pro or Studio for many more every day, or top up with a bit pack whenever you need.
         </p>
         <div className="mt-7 inline-flex flex-wrap items-center justify-center gap-2">
           <div className="flex rounded-full border border-white/10 bg-white/[0.03] p-1 text-sm">
@@ -123,7 +142,7 @@ export default function PricingPage() {
         </p>
       )}
 
-      <div className="mt-12 grid gap-5 md:grid-cols-2">
+      <div className="mt-12 grid gap-5 lg:grid-cols-3">
         {/* Free */}
         <div className="flex flex-col rounded-[1.8rem] border border-white/10 bg-white/[0.025] p-7">
           <p className="text-sm font-medium text-white/60">Free</p>
@@ -141,44 +160,60 @@ export default function PricingPage() {
           </a>
         </div>
 
-        {/* Pro */}
-        <div className="relative flex flex-col overflow-hidden rounded-[1.8rem] border border-blox/40 bg-gradient-to-b from-blox/[0.14] to-white/[0.02] p-7 shadow-[0_40px_100px_-50px_rgba(47,125,255,0.8)]">
-          <span className="absolute top-6 right-6 rounded-full bg-blox px-2.5 py-1 text-[10px] font-bold tracking-[0.14em] text-white uppercase">Best value</span>
-          <p className="text-sm font-medium text-blox-soft">Pro</p>
-          <p className="mt-2 font-display text-4xl font-bold">
-            {proPrice ? money(proPrice.amount, currency) : "—"}
-            <span className="ml-1 text-base font-normal text-white/45">{PERIODS.find((p) => p.id === period)?.per}</span>
-          </p>
-          <ul className="mt-6 grid gap-2.5 text-sm text-white/80">
-            <li>✓ {catalog ? catalog.dailyPro.toLocaleString() : "5,000"} bits every day</li>
-            <li>✓ Room for top models like Claude and GPT every day</li>
-            <li>✓ Bits top up the moment you subscribe</li>
-            <li>✓ Cancel anytime; Pro stays until the period ends</li>
-          </ul>
-          <div className="mt-auto pt-8">
-            {pro ? (
-              <a href="/account" className="block rounded-xl border border-blox/40 py-2.5 text-center text-sm font-medium text-blox-soft">
-                You&apos;re Pro · Manage
-              </a>
-            ) : (
-              <button
-                type="button"
-                onClick={() => void buy("pro")}
-                disabled={!onSale("pro") || busy !== null || !loaded}
-                className="w-full rounded-xl bg-blox py-2.5 text-sm font-semibold text-white transition-colors hover:bg-blox/90 disabled:opacity-50"
-              >
-                {busy === "pro" ? "Opening checkout…" : "Get Pro"}
-              </button>
-            )}
-          </div>
-        </div>
+        {PLANS.map((plan) => {
+          const price = priceOf(plan.id, period);
+          const current = tier === plan.id;
+          return (
+            <div
+              key={plan.id}
+              className={`relative flex flex-col overflow-hidden rounded-[1.8rem] border p-7 ${
+                plan.id === "pro"
+                  ? "border-blox/40 bg-gradient-to-b from-blox/[0.14] to-white/[0.02] shadow-[0_40px_100px_-50px_rgba(47,125,255,0.8)]"
+                  : "border-violet-400/30 bg-gradient-to-b from-violet-500/[0.12] to-white/[0.02]"
+              }`}
+            >
+              <span className={`absolute top-6 right-6 rounded-full px-2.5 py-1 text-[10px] font-bold tracking-[0.14em] text-white uppercase ${plan.id === "pro" ? "bg-blox" : "bg-violet-500"}`}>
+                {plan.badge}
+              </span>
+              <p className={`text-sm font-medium ${plan.id === "pro" ? "text-blox-soft" : "text-violet-300"}`}>{plan.name}</p>
+              <p className="mt-2 font-display text-4xl font-bold">
+                {price ? money(price.amount, currency) : "—"}
+                <span className="ml-1 text-base font-normal text-white/45">{PERIODS.find((x) => x.id === period)?.per}</span>
+              </p>
+              <ul className="mt-6 grid gap-2.5 text-sm text-white/80">
+                <li>✓ {catalog ? (plan.id === "pro" ? catalog.dailyPro : catalog.dailyStudio).toLocaleString() : plan.fallbackBits} bits every day</li>
+                {plan.perks.map((perk) => (
+                  <li key={perk}>✓ {perk}</li>
+                ))}
+              </ul>
+              <div className="mt-auto pt-8">
+                {current ? (
+                  <a href="/account" className="block rounded-xl border border-white/20 py-2.5 text-center text-sm font-medium text-white/85">
+                    Your plan · Manage
+                  </a>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => void buy(plan.id)}
+                    disabled={!onSale(plan.id) || busy !== null || !loaded}
+                    className={`w-full rounded-xl py-2.5 text-sm font-semibold text-white transition-colors disabled:opacity-50 ${plan.id === "pro" ? "bg-blox hover:bg-blox/90" : "bg-violet-500 hover:bg-violet-500/90"}`}
+                  >
+                    {busy === plan.id ? "Opening checkout…" : tier ? `Switch to ${plan.name}` : `Get ${plan.name}`}
+                  </button>
+                )}
+              </div>
+            </div>
+          );
+        })}
       </div>
 
-      {/* Bit packs */}
+      {/* Bit packs (shown once at least one is on sale) */}
+      {packs.length > 0 && (
+      <>
       <h2 className="mt-16 text-center font-display text-2xl font-bold tracking-tight">Bit packs</h2>
       <p className="mt-2 text-center text-sm text-white/45">One-time top-ups. They never expire and stack with your daily bits.</p>
       <div className="mx-auto mt-8 grid max-w-3xl gap-4 sm:grid-cols-2">
-        {(["bits_small", "bits_large"] as ItemId[]).map((id) => {
+        {packs.map((id) => {
           const price = priceOf(id);
           return (
             <div key={id} className="flex items-center justify-between gap-4 rounded-2xl border border-white/10 bg-white/[0.025] p-5">
@@ -198,6 +233,8 @@ export default function PricingPage() {
           );
         })}
       </div>
+      </>
+      )}
 
       {askEmail && (
         <div className="fixed inset-0 z-50 grid place-items-center bg-black/60 p-4" onMouseDown={() => setAskEmail(null)}>

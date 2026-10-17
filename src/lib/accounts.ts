@@ -10,8 +10,12 @@ import { kv } from "@/lib/kv";
 
 export type Provider = "roblox" | "google" | "discord";
 
+export type Tier = "pro" | "studio";
+
 export type Plan = {
-  /** Pro until this time (ms). Renewals push it forward; a cancelled plan runs to its end. */
+  /** Which paid plan (older records without it are Pro). */
+  tier?: Tier;
+  /** Paid until this time (ms). Renewals push it forward; a cancelled plan runs to its end. */
   proUntil: number;
   /** lava.top parent contract of the subscription (needed to cancel it). */
   subscriptionId?: string;
@@ -132,8 +136,14 @@ export async function accountForOAuth(
   });
 }
 
+/** Any paid plan that is still running. */
 export function isPro(a: Pick<Account, "plan"> | null | undefined) {
   return !!a?.plan && a.plan.proUntil > Date.now();
+}
+
+/** The running paid plan, or null on the free plan. */
+export function tierOf(a: Pick<Account, "plan"> | null | undefined): Tier | null {
+  return isPro(a) ? (a!.plan!.tier ?? "pro") : null;
 }
 
 /** Too many attempts from one IP/email in 15 minutes: slow brute force down. */

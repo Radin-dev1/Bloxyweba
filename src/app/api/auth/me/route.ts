@@ -1,6 +1,6 @@
-import { getAccount, isPro } from "@/lib/accounts";
+import { getAccount, isPro, tierOf } from "@/lib/accounts";
 import { authConfigured, currentUser, isAdmin, providersEnabled } from "@/lib/auth";
-import { BITS_DAILY, BITS_DAILY_PRO, balanceOf, bitsEnabled } from "@/lib/bits";
+import { balanceOf, bitsEnabled, dailyForTier } from "@/lib/bits";
 
 /** Who's signed in, their plan and how many bits they have, for the header. */
 export async function GET() {
@@ -8,11 +8,12 @@ export async function GET() {
   const enabled = bitsEnabled();
   const account = user ? await getAccount(user.id).catch(() => null) : null;
   const pro = isPro(account);
+  const tier = tierOf(account);
   return Response.json(
     {
       user,
       bits: user && enabled ? await balanceOf(user.id) : null,
-      daily: pro ? BITS_DAILY_PRO : BITS_DAILY,
+      daily: dailyForTier(tier),
       bitsEnabled: enabled,
       signInEnabled: authConfigured(),
       providers: providersEnabled(),
@@ -23,6 +24,7 @@ export async function GET() {
             hasPassword: !!account.passwordHash,
             linked: Object.keys(account.providers),
             pro,
+            tier,
             proUntil: account.plan?.proUntil ?? null,
             cancelled: !!account.plan?.cancelled,
           }
